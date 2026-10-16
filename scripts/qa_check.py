@@ -11,7 +11,8 @@
     ❌ 模板占位词残留（汇报标题、章节名、页面结论句……）
     ❌ 字号小于 10.5pt
     ⚠️ 文字估算宽度或行数超出文本框（按 tw 估算，中文按 1em；表格单元格不估算，以渲染图为准）
-    ⚠️ 正文里有小于 13pt 的文字、正文字数超过 150
+    ⚠️ 正文里有小于 13pt 的文字、正文字数超过 280
+    ⚠️ 卡片内容不充实：有大块竖向空白、只有文字的卡片里文字太少、没有图表的卡片每 cm² 字数太少
     ⚠️ 两个带文字的形状互相重叠
     ⚠️ 正文没有铺满正文区：内容上沿离正文区顶端超过 3cm，或下沿离底端超过 3.5cm（只看外框，卡片内部的空白以渲染图为准）
     ⚠️ 内容页没有口播稿备注
@@ -33,6 +34,7 @@ from pathlib import Path
 from pptx import Presentation
 from pptx.enum.dml import MSO_COLOR_TYPE, MSO_FILL
 from pptx.enum.shapes import MSO_SHAPE_TYPE
+from pptx.enum.text import MSO_ANCHOR
 from pptx.oxml.ns import qn
 
 # 版式页上由 Deck 填写的形状；它们在模板里的原文就是占位词，生成后还留着就是漏填
@@ -52,6 +54,15 @@ TYPE_LABELS = tuple(TYPE_NAMES.values()) + ("定律或定理", "公式或方程"
 MAX_TONES = 3
 # 正文内容离正文区上、下边超过这些距离（cm）时提示大块空白
 GAP_TOP, GAP_BOTTOM = 3.0, 3.5
+# 卡片里的竖向空白不小于 CARD_GAP[0] cm 且占正文区 CARD_GAP[1] 以上时提示；
+# 只有文字的卡片，文字面积占比低于 CARD_MIN_FILL 时提示（数值按 10.12 汇报里看着空的几页校准）
+CARD_GAP, CARD_MIN_FILL = (1.2, 0.35), 0.2
+# 没有图表的卡片，正文区每 cm² 少于这么多字时提示内容偏少（看着空的卡片在 0.56 以下，充实的在 0.67 以上）
+CARD_MIN_DENSITY = 0.6
+# 卡片里除文字外只允许有这些「文字的底子」，其余形状（图片、表格、图表、连线、节点、示意图形）都按图形算
+TEXT_DECOR = ("底色", "标签", "序号")
+# 每页正文字数上限：用户要求内容充实，150–250 字为宜，超过这个数再考虑拆页
+MAX_CHARS = 280
 # 正文图片按放置尺寸计算的最低分辨率
 MIN_DPI = 150
 # 主要块：参与近似错位和构图重复检查的形状（按 hust_deck 的命名前缀）
@@ -125,14 +136,9 @@ def sizes_of(sh):
     return out
 
 
-def overflow(sh):
-    """估算文字是否超出文本框，返回问题描述或 None。"""
-    tf = sh.text_frame
-    w = (sh.width - tf.margin_left - tf.margin_right) / CM
-    h = (sh.height - tf.margin_top - tf.margin_bottom) / CM
-    if w <= 0:
-        return None
-    total_h = 0.0
+def layout(tf, w):
+    """按 tw 估算文本框里每段的排版：[(行数, 行高, 文字总宽, 段前距)]，长度单位 cm；w 为可用宽度。"""
+    out = []
     for p in tf.paragraphs:
         runs = [r for r in p.runs if r.text]
         if not runs:
@@ -140,17 +146,94 @@ def overflow(sh):
         size = max((r.font.size.pt if r.font.size else 18) for r in runs)
         width = sum(tw(r.text, r.font.size.pt if r.font.size else 18) for r in runs)
         indent = (int(p._p.pPr.get("marL", 0)) / CM) if p._p.pPr is not None else 0
-        if not tf.word_wrap:
-            if width > w + 0.15:
-                return f"单行宽约 {width:.1f}cm，框宽 {w:.1f}cm"
-            lines = 1
-        else:
-            lines = max(1, -(-width // max(w - indent, 0.1)))
+        lines = max(1, -(-width // max(w - indent, 0.1))) if tf.word_wrap else 1
         lh = p.line_spacing.pt if p.line_spacing is not None and hasattr(p.line_spacing, "pt") else size * 1.25
-        total_h += lines * lh * 0.03528 + (p.space_before.pt * 0.03528 if p.space_before else 0)
-    if tf.word_wrap and total_h > h + 0.25:
+        out.append((lines, lh * 0.03528, width, p.space_before.pt * 0.03528 if p.space_before else 0))
+    return out
+
+
+def inner_size(sh):
+    tf = sh.text_frame
+    return (sh.width - tf.margin_left - tf.margin_right) / CM, (sh.height - tf.margin_top - tf.margin_bottom) / CM
+
+
+def overflow(sh):
+    """估算文字是否超出文本框，返回问题描述或 None。"""
+    tf = sh.text_frame
+    w, h = inner_size(sh)
+    if w <= 0:
+        return None
+    paras = layout(tf, w)
+    if not tf.word_wrap:
+        width = max((p[2] for p in paras), default=0)
+        return f"单行宽约 {width:.1f}cm，框宽 {w:.1f}cm" if width > w + 0.15 else None
+    total_h = sum(lines * lh + before for lines, lh, _, before in paras)
+    if total_h > h + 0.25:
         return f"文字高约 {total_h:.1f}cm，框高 {h:.1f}cm"
     return None
+
+
+def is_bare(sh):
+    """没有底色的文本框（正文、列表、说明文字），区别于节点、标签、图片这些有外形的块。"""
+    return sh.shape_type == MSO_SHAPE_TYPE.TEXT_BOX and sh.fill.type != MSO_FILL.SOLID
+
+
+def content_extent(sh):
+    """形状在页面上实际有内容的部分：(上沿, 下沿, 面积)，长度 cm、面积 cm²。
+    没有填充和边框的文本框只算文字本身（按估算的行数和宽度），其余形状算整个外框。"""
+    l, t, r, b = (v / CM for v in bbox(sh))
+    if not is_bare(sh):
+        return t, b, (r - l) * (b - t)
+    w, _ = inner_size(sh)
+    paras = layout(sh.text_frame, max(w, 0.1))
+    if not paras:
+        return t, t, 0.0
+    th = sum(lines * lh + before for lines, lh, _, before in paras)
+    area = sum(min(width, w * lines) * lh for lines, lh, width, _ in paras)
+    anchor = sh.text_frame.vertical_anchor
+    top = {MSO_ANCHOR.MIDDLE: (t + b - th) / 2, MSO_ANCHOR.BOTTOM: b - th}.get(anchor, t)
+    return top, top + th, area
+
+
+def card_fill(card, shapes):
+    """卡片正文区（标题条以下）的填充情况：(标题, 正文区高, 最大竖向空白, 内容面积占比, 是否只有文字)。
+    内容按 content_extent 计，正文区上下各留 0.4cm 内边距不算空白。
+    放关键数字（keynum）的卡片本来就是几个大数字，不算「只有文字」。"""
+    cl, ct, cr, cb = (v / CM for v in bbox(card))
+    inside = [s for s in shapes if s is not card and contains(bbox(card), bbox(s))]
+    heads = [s for s in inside if s.name.startswith("标题条")]
+    top = max((bbox(s)[3] / CM for s in heads), default=ct)
+    items = [s for s in inside if not s.name.startswith("标题条")]
+    spans, area = [], 0.0
+    for s in items:
+        st, sb, a = content_extent(s)
+        st, sb = max(st, top), min(sb, cb)
+        if sb > st:
+            spans.append((st, sb))
+            area += a
+    body_h = cb - top
+    gap, y = 0.0, top + 0.4
+    for st, sb in sorted(spans):  # 自上而下扫描：已覆盖到 y，下一段从 st 开始，中间就是空白
+        gap = max(gap, st - y)
+        y = max(y, sb)
+    gap = max(gap, cb - 0.4 - y)
+    title = heads[0].text_frame.text.strip() if heads else card.name
+    fill = min(area / max(body_h * (cr - cl), 0.01), 1.0)
+    text_only = all(is_bare(s) for s in items) and not any(s.name.startswith("关键数字") for s in items)
+    return title, body_h, gap, fill, text_only
+
+
+def card_density(card, shapes):
+    """卡片正文区每 cm² 的字数和正文区面积；卡片里有图、表、节点图或关键数字时返回 None（这类卡片靠图形说话）。"""
+    inside = [s for s in shapes if s is not card and contains(bbox(card), bbox(s))]
+    heads = [s for s in inside if s.name.startswith("标题条")]
+    items = [s for s in inside if s not in heads]
+    if any(s.name.startswith("关键数字") or not (is_bare(s) or s.name.startswith(TEXT_DECOR)) for s in items):
+        return None
+    top = max((bbox(s)[3] for s in heads), default=bbox(card)[1])
+    area = card.width / CM * (bbox(card)[3] - top) / CM
+    chars = sum(len(re.sub(r"\s", "", text_of(s))) for s in items)
+    return chars / max(area, 0.01), area
 
 
 def bbox(sh):
@@ -333,8 +416,18 @@ def main():
                                for sh in blocks if sh.width * sh.height / CM ** 2 >= SIG_MIN_AREA))
             if sig:
                 layouts.setdefault(sig, []).append(i)
-            if body_chars > 150:
-                report("⚠️", i, f"正文约 {body_chars} 字，超过 150 字，考虑删减或拆页")
+            for card in (sh for sh in shapes if sh.name.startswith("卡片")):
+                head, h, gap, fill, text_only = card_fill(card, shapes)
+                if gap >= CARD_GAP[0] and gap >= CARD_GAP[1] * h:
+                    report("⚠️", i, f"卡片「{head}」里有约 {gap:.1f}cm 高的空白（占正文区 {gap / h:.0%}），"
+                                    "从材料里补原因、数据或例子，补不出再缩小卡片")
+                elif text_only and fill < CARD_MIN_FILL and h * card.width / CM >= 20:
+                    report("⚠️", i, f"卡片「{head}」只有零星几句（文字约占 {fill:.0%}），补充内容或缩小卡片")
+                elif (d := card_density(card, shapes)) and d[0] < CARD_MIN_DENSITY and d[1] >= 15:
+                    report("⚠️", i, f"卡片「{head}」内容偏少（约 {d[0]:.2f} 字/cm²，充实的卡片在 {CARD_MIN_DENSITY} 以上），"
+                                    "每条写成具体的事实，或加条目")
+            if body_chars > MAX_CHARS:
+                report("⚠️", i, f"正文约 {body_chars} 字，超过 {MAX_CHARS} 字，考虑删减或拆页")
             if not notes:
                 report("⚠️", i, "没有口播稿备注")
 

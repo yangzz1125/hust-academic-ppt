@@ -35,10 +35,10 @@ deck.divider(SECTIONS[0])
 
 # 图为主：炉腔照片 + 窄栏算波长
 c = deck.content(SECTIONS[0], "家用微波炉工作在 2.45 GHz，波长 12.2 cm",
-                 notes="先看炉腔：一个金属盒子，底部是玻璃转盘。微波炉用 2.45 GHz，用 λ = c/f 算出波长 12.2 cm，"
-                       "门上的金属网孔比这小得多，所以微波出不去、光能透过。")
+                 notes="先看炉腔，底部是玻璃转盘。微波炉用 2.45 GHz，用 λ = c/f 算出波长 12.2 cm。"
+                       "炉腔像一个法拉第笼，门上的金属网孔比波长小得多，所以微波出不去；可见光波长短得多，能透过网看到里面。")
 g = Grid()
-c.web_figure(FIG / "oven_interior.jpg", g.box(0, 0, 8, 6), "家用微波炉的炉腔：四壁是金属，底部是玻璃转盘")
+c.web_figure(FIG / "oven_interior.jpg", g.box(0, 0, 8, 6), "家用微波炉的炉腔，底部是玻璃转盘")
 body = c.card(g.box(8, 0, 4, 3), header="波长怎么算")
 c.text(Box(body.l + 0.5, body.t - 0.4, body.w - 1.0, 3.0), [
     P(*var("λ"), " = ", *var("c"), " / ", *var("f")),
@@ -46,8 +46,9 @@ c.text(Box(body.l + 0.5, body.t - 0.4, body.w - 1.0, 3.0), [
     P(R("≈ 0.122 m = 12.2 cm", color=TONES["accent"].ink, bold=True)),
 ], line=28)
 body = c.card(g.box(8, 3, 4, 3), header="门上的网挡住微波", solid=False)
-c.bullets(Box(body.l + 0.5, body.t - 0.4, body.w - 1.0, 3.6),
-          ["网孔远小于 12.2 cm", "微波出不去，光能透过"], line=28)
+c.bullets(Box(body.l + 0.5, body.t - 0.4, body.w - 1.0, 3.9),
+          ["炉腔像法拉第笼，屏蔽微波", "观察窗里有一层导电金属网", "网孔远小于波长，微波出不去", "可见光波长短得多，能透过"],
+          line=26)
 
 # 图为主（7 + 5）：磁控管剖面 + 部件表
 c = deck.content(SECTIONS[0], "磁控管用正交的电场和磁场让电子绕行，产生微波",
@@ -67,7 +68,8 @@ c.table(body.l + 0.5, body.t - 0.4, [0.9, 2.6, body.w - 4.5], [
 # 流程 + 说明合在一张卡里；效率单独成卡，用两个关键数字
 c = deck.content(SECTIONS[0], "电能经过高压电源、磁控管、波导三步进入炉腔",
                  notes="顺着箭头讲一遍能量怎么走，每个环节下面是它做的事。磁控管这一步把电能变成微波，用橙色标出。"
-                       "最后看效率：普通型号只有一半左右的电能变成微波。")
+                       "左下看效率：普通型号只有一半左右的电能变成微波。右下是功率档位：普通炉的磁控管只有一个功率，"
+                       "低档是靠每隔几秒开关一次实现的；变频电源能持续输出低功率，加热更均匀。")
 flow = c.card(g.box(0, 0, 12, 4), header="能量路径")
 xs = [flow.l + flow.w * (k + 0.5) / 5 for k in range(5)]
 y = flow.cy + 0.9
@@ -82,9 +84,13 @@ for x, (name, desc, tone) in zip(xs, steps):
            color=TONES["accent"].ink if tone == "accent" else TEXT)
 for a, b in zip(nodes, nodes[1:]):
     c.link(a, b, color=TONES["primary"].base, lw=1.5)
-eff = c.card(g.box(0, 4, 12, 2), header="效率：电能有多少变成了微波", solid=False, tone="accent")
-for x, value, label in [(eff.l + eff.w * 0.25, "低至 50%", "普通型号"), (eff.l + eff.w * 0.75, "超过 64%", "节能型号")]:
-    c.keynum(x, eff.b + (eff.h - 1.1) / 2, value, label)
+eff = c.card(g.box(0, 4, 6, 2), header="效率：电能有多少变成了微波", solid=False, tone="accent")
+for k, (value, label) in enumerate([("低至 50%", "普通型号"), ("超过 64%", "节能型号"), ("约 700 W", "磁控管 1 kW 输入时")]):
+    c.keynum(eff.l + eff.w * (k + 0.5) / 3, eff.b + (eff.h - 1.1) / 2, value, label)
+body = c.card(g.box(6, 4, 6, 2), header="功率档位怎么调", solid=False)
+c.bullets(Box(body.l + 0.5, body.t - 0.3, body.w - 1.0, body.h - 0.4),
+          ["普通炉只有一个功率，低档靠每隔几秒开关磁控管", "变频电源能持续输出低功率，加热更均匀"],
+          line=24, anchor="m")
 
 # ======================================================== 二、微波怎么加热食物
 deck.divider(SECTIONS[1])
@@ -92,7 +98,8 @@ deck.divider(SECTIONS[1])
 # 图为主（原生示意图）：水分子跟着电场翻转
 c = deck.content(SECTIONS[1], "水分子一端带正电、一端带负电，跟着电场来回转向",
                  notes="水分子的氧一端带负电，两个氢一端带正电。电场向上时氢一端朝上；半个周期后电场反向，分子跟着翻过来。"
-                       "电场每秒振荡 24.5 亿次，分子来回转动，电场的能量就变成了热。")
+                       "电场每秒振荡 24.5 亿次，分子来回转动，推挤、碰撞周围的分子，电场的能量就变成了热。"
+                       "这种加热对液态水最有效，对脂肪和糖弱得多；但油可以被加热到远高于沸水的温度。")
 big = c.card(g.box(0, 0, 8, 6), header="示意：电场反向，水分子跟着翻转")
 
 
@@ -125,14 +132,17 @@ for cx, up, label in [(big.l + big.w * 0.27, True, "电场向上"), (big.l + big
     molecule(cx, 6.9, up)
 c.line((big.cx - 0.7, 6.9), (big.cx + 0.7, 6.9), GRAY, 1.5, arrow=True)
 body = c.card(g.box(8, 0, 4, 6), header="为什么会发热", solid=False)
-c.bullets(Box(body.l + 0.5, body.t - 0.5, body.w - 1.0, 8.0),
-          ["电场每秒振荡 24.5 亿次", "分子一直想对齐电场，跟着来回转动", "转动的能量变成热",
-           "脂肪、糖也有极性基团，但吸热比水慢"], line=26)
+# 窄卡片一行约 13 个字，每条控制在一行内，不让自动换行拆开词语
+c.bullets(Box(body.l + 0.5, body.t - 0.5, body.w - 1.0, body.h - 0.9), [
+    "电场每秒振荡 24.5 亿次", "分子想对齐电场，来回转动", "转动时推挤、碰撞周围分子", "能量就这样传开，变成热",
+    "对液态水最有效", "对脂肪和糖弱得多", "油能热到远高于沸水",
+], line=26, gap=10)
 
 # 便当混合：公式为主角，两个配角
 c = deck.content(SECTIONS[1], "吸热功率与频率、损耗因子和场强平方成正比",
-                 notes="这是介质加热的功率密度公式。代入 2.45 GHz 算出角频率；"
-                       "两个推论：含水多的地方吸热快，电场强的地方吸热快，后者就是下一章热点的来源。")
+                 notes="这是介质加热的功率密度公式。代入 2.45 GHz 算出角频率；损耗因子是介电常数的虚部，"
+                       "衡量材料把电场能量变成热的能力。推论：含水多的地方吸热快，电场强的地方吸热快，"
+                       "后者就是下一章热点的来源；盐水这类导电液体还可能局部越热越吸热。")
 big = c.card(g.box(0, 0, 7, 6), header="公式 · 介质加热的功率密度", tone="formula")
 eq = Box(big.l + 0.5, big.t - 0.5, big.w - 1.0, 1.8)
 c.tint(eq, "formula")
@@ -147,20 +157,23 @@ c.table(eq.l, eq.b - 0.5, [2.0, eq.w - 4.6, 2.6], [
     (P(*var("E")), "电场强度", "V/m"),
 ], row_h=1.2)
 body = c.card(g.box(7, 0, 5, 3), header="代入 2.45 GHz", solid=False)
-c.text(Box(body.l + 0.5, body.t - 0.5, body.w - 1.0, 2.2), [
+c.bullets(Box(body.l + 0.5, body.t - 0.4, body.w - 1.0, body.h - 0.6), [
     P(*var("ω"), " = 2π", *var("f"), " ≈ 154 亿 rad/s"),
-    P("频率越高，吸热越快", before=6),
-], line=26)
-body = c.card(g.box(7, 3, 5, 3), header="两个推论", solid=False)
-c.bullets(Box(body.l + 0.5, body.t - 0.5, body.w - 1.0, 2.4), [
+    P(*var("ε", "r"), R("″", latin=LM), "：材料把电场能量变成热的能力"),
+    "频率越高，同样场强下吸热越快",
+], line=26, gap=4)
+body = c.card(g.box(7, 3, 5, 3), header="三个推论", solid=False)
+c.bullets(Box(body.l + 0.5, body.t - 0.4, body.w - 1.0, body.h - 0.6), [
     P("含水多的部分 ", *var("ε", "r"), R("″", latin=LM), " 大，先热"),
     P(*var("E"), " 大的地方吸热快：形成热点"),
-], line=26)
+    "盐水这类导电液体易局部过热",
+], line=26, gap=4)
 
 # 便当混合：原生剖面示意 + 两个配角
 c = deck.content(SECTIONS[1], "微波只进入食物约 1 cm，里面靠热传导",
-                 notes="2.45 GHz 的微波只进入食物外层约 1 cm，厚食物的里面是靠外层传热热起来的，所以不是从里往外熟。"
-                       "工业炉用 915 MHz，波长更长，能进得更深。")
+                 notes="2.45 GHz 的微波只进入多数食物约 1 cm，厚食物的里面是靠外层传热热起来的。"
+                       "「从里往外熟」是误解：表层干、下面湿的时候，里面吸热反而多，才有这种感觉。"
+                       "解冻要用低功率，就是给热传导留时间。工业炉用 915 MHz，波长 32.8 cm，能进得更深。")
 big = c.card(g.box(0, 0, 7, 6), header="示意：食物剖面")
 outer = Box(big.l + 2.2, big.t - 2.2, big.w - 4.4, 7.4)
 inner = Box(outer.l + 1.4, outer.t - 1.4, outer.w - 2.8, outer.h - 2.8)
@@ -174,17 +187,22 @@ for (x0, x1) in [(inner.l + 0.3, inner.l + 1.6), (inner.r - 0.3, inner.r - 1.6)]
     c.line((x0, inner.cy - 0.6), (x1, inner.cy - 0.6), GRAY, 1.5, arrow=True)
 c.at("n", outer.cx, outer.b - 0.3, "外层约 1 cm：微波直接加热", size=S_SMALL, color=TONES["accent"].ink, bold=True)
 body = c.card(g.box(7, 0, 5, 3), header="频率越低，进得越深", solid=False)
-c.text(Box(body.l + 0.5, body.t - 0.5, body.w - 1.0, 2.4), ["工业炉用 915 MHz", "波长 32.8 cm，能进得更深"], line=26)
+c.bullets(Box(body.l + 0.5, body.t - 0.4, body.w - 1.0, body.h - 0.6), [
+    "2.45 GHz 只进入多数食物约 1 cm", "工业炉常用 915 MHz，波长 32.8 cm", "频率越低，电场进入非导体越深",
+], line=26, gap=4)
 body = c.card(g.box(7, 3, 5, 3), header="不是从里往外熟", solid=False)
-c.text(Box(body.l + 0.5, body.t - 0.5, body.w - 1.0, 2.4), "外层 1 cm 先热，里面靠外层把热传进去", line=26)
+c.bullets(Box(body.l + 0.5, body.t - 0.4, body.w - 1.0, body.h - 0.6), [
+    "外层先热，里面靠热传导", "表层干、下面湿时，里面吸热更多", "解冻用低功率，给热传导留时间",
+], line=26, gap=4)
 
 # ======================================================== 三、为什么会加热不均
 deck.divider(SECTIONS[2])
 
 # 上宽下格：原生折线图（由驻波模型算出）+ 两张卡
 c = deck.content(SECTIONS[2], "炉腔里形成驻波，热点间距约半个波长 6.1 cm",
-                 notes="微波在金属壁之间来回反射形成驻波。按一维模型，加热强度和 E 的平方成正比，"
-                       "峰值每隔半个波长出现一次，约 6.1 cm。用湿的热敏纸放进炉腔，变黑的地方就是热点。")
+                 notes="炉腔尺寸固定，微波在金属壁之间来回反射形成驻波。按一维模型，加热强度和 E 的平方成正比，"
+                       "峰值每隔半个波长出现一次，约 6.1 cm。用湿的热敏纸放进炉腔，变黑的地方就是热点；"
+                       "超市小票就是热敏纸，在家就能做。")
 lam = 12.2
 xs = list(range(31))
 top = c.card(g.box(0, 0, 12, 4), header="一维简化模型：离炉壁 x 处的相对加热强度（∝ E²），横轴单位 cm")
@@ -192,20 +210,30 @@ c.chart("line", Box(top.l + 0.3, top.t - 1.2, top.w - 0.6, top.h - 1.6), [str(x)
         {"相对加热强度": [round(math.sin(2 * math.pi * x / lam) ** 2, 2) for x in xs]},
         unit="相对强度", number_format="0.0", vmax=1.0)
 b = c.card(g.box(0, 4, 6, 2), header="估算", solid=False, tone="accent")
-c.at("w", b.l + 0.5, b.cy, P("热点间距 = ", *var("λ"), " / 2 = 12.2 cm ÷ 2 = 6.1 cm"))
+c.text(Box(b.l + 0.5, b.t - 0.15, b.w - 1.0, b.h - 0.3), [
+    P("热点间距 = ", *var("λ"), " / 2 = 12.2 cm ÷ 2 = 6.1 cm"),
+    "热点离炉壁约 3.05、9.15、15.25 cm……",
+], line=24, anchor="m")
 b = c.card(g.box(6, 4, 6, 2), header="怎么验证", solid=False)
-c.at("w", b.l + 0.5, b.cy, "湿热敏纸放进炉腔，变黑的地方就是热点")
+c.text(Box(b.l + 0.5, b.t - 0.15, b.w - 1.0, b.h - 0.3), [
+    "湿热敏纸放进炉腔，变黑的地方就是热点", "超市小票就是热敏纸，在家就能做",
+], line=24, anchor="m")
 
 # 便当混合：照片为主角 + 两种办法 + 总结条
 c = deck.content(SECTIONS[2], "转盘和搅拌器让食物轮流经过热点，中心仍可能不均",
-                 notes="两种办法：转盘让食物动，搅拌器让场动。转盘占掉方形炉腔近四分之一的容积，"
-                       "而且转盘中心附近的食物位置基本不变，仍可能受热不均。")
+                 notes="两种办法：转盘让食物动，搅拌器让场动。转盘是夏普 1964 到 1966 年间推出的，比早期的搅拌器更均匀；"
+                       "食物放得偏离中心一点，每个部分都会移动，受热更均匀。搅拌器是顶部的金属叶片，食物不用动。"
+                       "代价是转盘占掉方形炉腔近四分之一的容积，而且中心附近仍可能受热不均。")
 gb = Grid(bottombar=True)
 c.web_figure(FIG / "turntable.jpg", gb.box(0, 0, 7, 6), "带玻璃转盘的家用微波炉炉腔")
 body = c.card(gb.box(7, 0, 5, 3), header="转盘：让食物动", solid=False)
-c.text(Box(body.l + 0.5, body.t - 0.5, body.w - 1.0, 2.4), "食物转一圈，轮流经过不同的热点", line=26)
+c.bullets(Box(body.l + 0.5, body.t - 0.35, body.w - 1.0, body.h - 0.5), [
+    "食物转一圈，轮流经过不同热点", "夏普 1964–1966 年推出，比搅拌器均匀", "食物偏离中心放，受热更均匀",
+], line=24, gap=4)
 body = c.card(gb.box(7, 3, 5, 3), header="搅拌器：让场动", solid=False)
-c.text(Box(body.l + 0.5, body.t - 0.5, body.w - 1.0, 2.4), "顶部金属叶片转动，改变炉腔里的场分布", line=26)
+c.bullets(Box(body.l + 0.5, body.t - 0.35, body.w - 1.0, body.h - 0.5), [
+    "顶部反射微波的叶片转动，改变场分布", "藏在透波的塑料盖板上方，食物不动", "商用炉也有装多个磁控管的",
+], line=24, gap=4)
 c.bottombar("代价", "转盘占掉方形炉腔近四分之一的容积，中心附近仍可能受热不均")
 
 # ======================================================== 总结
@@ -215,15 +243,16 @@ c = deck.content("总结", "微波炉加热靠三件事：产生微波、分子�
 g3 = Grid(cols=3, gap=1.2)
 cards = []
 for i, (head, items) in enumerate([
-        ("1  产生微波", ["磁控管把直流电变成微波", "高压电源 → 磁控管 → 波导", "门上的网挡住微波"]),
+        ("1  产生微波", ["磁控管把直流电变成微波", "高压电源 → 磁控管 → 波导", "效率：普通型号低至 50%", "门上的网挡住微波"]),
         ("2  分子吸能", ["水分子跟着电场来回转向",
                      P("功率 ∝ ", *var("ω"), " · 损耗因子 · ", *var("E"), R("2", latin=LM, sup=True)),
-                     "只进入食物外层约 1 cm"]),
-        ("3  平均热点", ["驻波在炉腔里形成热点", "热敏纸能显示热点位置", "转盘、搅拌器让食物轮流经过"])]):
+                     "对水最有效，脂肪和糖弱得多", "只进入食物外层约 1 cm"]),
+        ("3  平均热点", ["驻波在炉腔里形成热点", "热敏纸能显示热点位置", "转盘、搅拌器让食物轮流经过",
+                     "转盘中心附近仍可能不均"])]):
     card = g3.box(i, 0, 1, 4)
     body = c.card(card, header=head, solid=i == 1, highlight=i == 1)
-    # 条目纵向居中、拉开间距，不让要点挤在卡片上半部
-    c.bullets(Box(body.l + 0.5, body.t - 0.3, body.w - 1.0, body.h - 0.6), items, line=28, anchor="m", gap=14)
+    # 每张卡四条，纵向居中
+    c.bullets(Box(body.l + 0.5, body.t - 0.3, body.w - 1.0, body.h - 0.6), items, line=26, anchor="m", gap=8)
     cards.append(card)
 for a, b in zip(cards, cards[1:]):
     c.line((a.r + 0.15, a.cy), (b.l - 0.15, a.cy), TONES["primary"].base, 1.5, arrow=True)

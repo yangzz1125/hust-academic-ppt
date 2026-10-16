@@ -453,8 +453,8 @@ class Canvas:
     def keynum(self, x, y, value, label, tone="accent"):
         """关键数字：18pt 粗体的数值（默认强调色），正下方 13pt 灰色说明，整组以 (x, y) 为中心。
         用于一页里要听众记住的两三个数字，如结论页的「数字带」、效率对比。"""
-        self.at("s", x, y + 0.4, value, size=S_TITLE, color=TONES[tone].ink, bold=True)
-        self.at("n", x, y + 0.3, label, size=S_SMALL, color=GRAY)
+        self.at("s", x, y + 0.4, value, size=S_TITLE, color=TONES[tone].ink, bold=True, kind="关键数字")
+        self.at("n", x, y + 0.3, label, size=S_SMALL, color=GRAY, kind="关键数字")
 
     def output(self, card, text, h=1.8, tone="accent"):
         """卡片底部的「产出」框：默认橙色浅底，13pt 标签 + 13pt 粗体内容。"""
