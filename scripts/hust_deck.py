@@ -554,6 +554,29 @@ class Canvas:
                       align={"w": "l", "e": "r"}.get(align, "c"), line=S_SMALL * 1.3)
         return Box(x, y, w, h)
 
+    def gallery(self, box, rows, gap=0.25, valign="m"):
+        """把几张图拼进 box：rows 为图片路径的二维列表（每个子列表一行）。
+        同一行的图等高、首尾相接占满整行宽度（按各图宽高比分配），所有行再一起缩放到放得进 box 的高度；
+        缩放后变窄的行水平居中，整组按 valign（n / m / s）竖直放置。返回实际占用的 Box。
+        比逐张 figure() 进固定格子更紧凑：不会因为宽高比不同而在格子里留大块空白。"""
+        aspects = [[(lambda s: s[0] / s[1])(_png_size(p) if str(p).lower().endswith(".png") else _image_size(p))
+                    for p in row] for row in rows]
+        heights = [(box.w - gap * (len(a) - 1)) / sum(a) for a in aspects]  # 每行占满宽度时的高度
+        k = min(1.0, (box.h - gap * (len(rows) - 1)) / sum(heights))
+        total = sum(heights) * k + gap * (len(rows) - 1)
+        y = {"n": box.t, "s": box.b + total}.get(valign, box.cy + total / 2)
+        top = y
+        for row, a, h in zip(rows, aspects, heights):
+            h *= k
+            x = box.cx - (sum(a) * h + gap * (len(a) - 1)) / 2
+            for path, ai in zip(row, a):
+                pic = self.shapes.add_picture(str(path), ex(x), ey(y), el(ai * h), el(h))
+                self.n += 1
+                pic.name = f"图片 {self.n}"
+                x += ai * h + gap
+            y -= h + gap
+        return Box(box.l, top, box.w, total)
+
     def web_figure(self, path, box, caption, align="c"):
         """放 fetch_image.py 取来的网上图片，图注必填：写图里是什么、图上标号的含义。
         页面上不写出处；来源和许可在旁边同名 .json 里，缺 .json 说明不是按流程取来的图，直接报错。"""

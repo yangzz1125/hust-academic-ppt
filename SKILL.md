@@ -191,6 +191,7 @@ deck.save(输出路径)
 | `keynum(x, y, 数值, 说明, tone="accent")` | 关键数字：18pt 粗体数值 + 下方 13pt 说明，以 (x, y) 为中心；y 取卡片正文区中心 |
 | `chart(kind, box, 类别, {系列: 数值}, tones, unit, number_format, labels, highlight, vmax)` | 原生图表：`bar` / `barh` / `line`，数据可在 PowerPoint 里改；最多 3 个系列，默认本工作主色、基线灰色；`highlight=类别名` 把一根柱标成橙色；柱图的轴从 0 开始 |
 | `figure(path, box, caption=None)` / `web_figure(path, box, 图注)` | 等比放图，给 caption 时图下带 13pt 图注 / 放网上取来的图，图注必填 |
+| `gallery(box, [[图, 图], [图]], gap, valign)` | 一块区域里拼多张图：同行等高、占满整行宽度，整组缩放到放得下。一张卡片放 2 张以上图时用它，不要逐张放进固定格子 |
 | `formula(png, x, y)` / `snippet(png, anchor, x, y)` | 按 600dpi 原尺寸放公式图 / 按原尺寸放代码或终端图（返回的 Box 带 `line_y(k)`） |
 | `bottombar(标签, 一句话)` | 页底总结条 |
 
