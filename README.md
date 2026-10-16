@@ -48,9 +48,9 @@ deck = Deck("hust")
 deck.cover("微波炉为什么能加热食物", "课程小组", "2026年10月14日")
 deck.toc(["微波从哪里来", "微波怎么加热食物", "为什么会加热不均"])
 deck.divider("微波从哪里来")
-c = deck.content("微波从哪里来", "磁控管用正交的电场和磁场让电子绕行，产生微波", notes="口播稿……")
+c = deck.content("微波从哪里来", "磁控管让电子绕行掠过谐振腔，像吹哨一样激发微波", notes="口播稿……")
 g = Grid()
-c.web_figure("figures/magnetron.jpg", g.box(0, 0, 8, 6), "磁控管剖面：1 阴极 2 阳极 3 永磁体")
+c.web_figure("figures/magnetron.jpg", g.box(0, 0, 5, 6), "1 阴极 2 阳极 3 永磁体 4 谐振腔 5 输出线 6 输出针")
 ...
 deck.save("deck.pptx")
 ```
