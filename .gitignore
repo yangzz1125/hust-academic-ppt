@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+# 示例生成的 deck 和渲染图
+*.pptx
+!templates/*/template.pptx
+p-*.png
