@@ -13,16 +13,18 @@
     ⚠️ 文字估算宽度或行数超出文本框（按 tw 估算，中文按 1em；表格单元格不估算，以渲染图为准）
     ⚠️ 正文里有小于 13pt 的文字、正文字数超过 280
     ⚠️ 卡片内容不充实：有大块竖向空白、只有文字的卡片里文字太少、没有图表的卡片每 cm² 字数太少
-    ⚠️ 两个带文字的形状互相重叠
+    ⚠️ 两个带文字的形状互相重叠；正文文字压在图片上（按估算的文字行高，不按文本框外框）
     ⚠️ 正文没有铺满正文区：内容上沿离正文区顶端超过 3cm，或下沿离底端超过 3.5cm（只看外框，卡片内部的空白以渲染图为准）
     ⚠️ 内容页没有口播稿备注
     ⚠️ 正文图片分辨率低于 150dpi（放映时发虚）、网图（web_figure）没有图注
     ⚠️ 页面标题过短，可能是主题标签而不是结论句；页面标题、章节标签会折成两行
     ⚠️ 标题、正文、口播稿里有 AI 套话（值得注意的是、综上所述、不是……而是……等）
     ⚠️ 近似错位：两个主要块（卡片、底块、图片、表格、图表）的同一条边相差 0.02–0.25cm，要么对齐要么拉开
+       （对边已对齐的不算，如上沿对齐、高度不同的一排图）
     ⚠️ 同一构图（主要块的位置和尺寸）出现在 5 页及以上，版式节奏单调
+    ⚠️ 整份版式单一：七成以上的内容页（且不少于 5 页）都是卡片铺满正文区（卡片面积占正文区六成以上）
     ⚠️ 页面上的数字在 --source 材料中找不到
-    ⚠️ 颜色不在 hust_deck 配色里、含义色超过 3 种（有图例时另加图例里的类型数）、字号超过 4 档、
+    ⚠️ 颜色不在 hust_deck 配色里、含义色超过 3 种（有图例时另加图例里的类型数）、字号超过 4 档（28pt 及以上的展示字号不算）、
        同一标签重复 3 次以上
 最后按顺序列出全部页面标题，供「只读标题」测试。有 ❌ 时退出码为 1。
 """
@@ -46,7 +48,7 @@ CM = 360000
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from hust_deck import GRAY, INK, LINE, TEXT, TONES, TYPE_NAMES, WHITE, templates, tw, use_template  # noqa: E402
+from hust_deck import GRAY, INK, LINE, S_MARK, TEXT, TONES, TYPE_NAMES, WHITE, templates, tw, use_template  # noqa: E402
 
 TYPE_LABELS = tuple(TYPE_NAMES.values()) + ("定律或定理", "公式或方程", "应用", "方法")
 
@@ -70,6 +72,9 @@ BLOCKS = ("卡片", "底色", "图片", "网图", "表格", "图表", "截图")
 NEAR_MISS = (0.02, 0.25)  # cm
 # 构图签名只看面积不小于这个值（cm²）的块；同一签名出现这么多页时提示
 SIG_MIN_AREA, SIG_MAX_REPEAT = 20, 5
+# 卡片面积占正文区这个比例以上算「卡片铺满」；这样的页占内容页 CARDED[1] 以上、且不少于 CARDED[2] 页时提示版式单一。
+# 卡片本身是模板的基础，用户认可的微波炉示例 8 页中 5 页卡片铺满；被评为「太死板」的开题 PPT 是 20 页中 15 页
+CARDED = (0.6, 0.7, 5)
 # AI 套话：句式类，不含「系统」「全面」这类在技术文本里常有正当用法的词
 SLOP = ["众所周知", "不可否认", "毋庸置疑", "毫无疑问", "值得注意的是", "需要指出的是", "更重要的是", "说白了",
         "归根结底", "从某种意义上", "底层逻辑", "一句话总结", "一句话讲透", "综上所述", "总而言之", "总的来说",
@@ -240,6 +245,10 @@ def bbox(sh):
     return (sh.left, sh.top, sh.left + sh.width, sh.top + sh.height)
 
 
+def geom(sh):
+    return sh.name, sh.left, sh.top, sh.width, sh.height
+
+
 def overlap(a, b):
     x = min(a[2], b[2]) - max(a[0], b[0])
     y = min(a[3], b[3]) - max(a[1], b[1])
@@ -251,7 +260,8 @@ def contains(a, b):
 
 
 def load_template(prs, name):
-    """载入 deck 所用的模板，返回 (模板, 占位词, 模板自带的装饰形状名)。"""
+    """载入 deck 所用的模板，返回 (模板, 占位词, 模板自带的装饰形状)。
+    装饰形状按「名字 + 位置尺寸」记：生成的形状也叫「图片 2」「矩形 5」，只看名字会把它们当成装饰漏查。"""
     if name is None:
         m = re.fullmatch(r"template:(\S+)", prs.core_properties.category or "")
         if not m:
@@ -264,7 +274,7 @@ def load_template(prs, name):
             if sh.name in FILLED:
                 stale.add(sh.text_frame.text.strip())
             else:  # 顶栏、校徽、标题线等，不计入正文样式统计，也允许伸出页外
-                decor.add(sh.name)
+                decor.add(geom(sh))
     return t, stale, decor
 
 
@@ -289,6 +299,8 @@ def main():
     errors = warns = 0
     titles = []
     layouts = {}
+    carded = []  # 卡片铺满正文区的页
+    n_content = 0
 
     def report(level, i, msg):
         nonlocal errors, warns
@@ -322,7 +334,8 @@ def main():
         for sh in shapes:
             if sh.left is None:
                 continue
-            in_body = is_content and sh.name not in HEADER | decor and not sh.name.startswith("灯片编号")
+            fixed = sh.name in HEADER or geom(sh) in decor or sh.name.startswith("灯片编号")
+            in_body = is_content and not fixed
             if in_body:
                 body_boxes.append(bbox(sh))
                 if sh.name.startswith(BLOCKS):
@@ -341,7 +354,7 @@ def main():
                     chips[text_of(sh).strip()] = chips.get(text_of(sh).strip(), 0) + 1
             l, t, r, b = bbox(sh)
             # 模板自带的形状（如华科的校徽图片）本来就可能有一部分在页外
-            if sh.name not in HEADER | decor and not sh.name.startswith("灯片编号") and (
+            if not fixed and (
                     l < -CM * 0.05 or t < -CM * 0.05 or r > W + CM * 0.05 or b > H + CM * 0.05):
                 report("❌", i, f"「{sh.name}」超出页面")
             txt = text_of(sh).strip()
@@ -371,6 +384,13 @@ def main():
                 ba, bb = bbox(a), bbox(b)
                 if overlap(ba, bb) and not contains(ba, bb) and not contains(bb, ba):
                     report("⚠️", i, f"「{a.name}」与「{b.name}」重叠")
+        pictures = [sh for sh in shapes if sh.shape_type == MSO_SHAPE_TYPE.PICTURE and geom(sh) not in decor]
+        for a in (sh for sh in texted if is_bare(sh)):  # 有底色的标签、序号放在图上是有意的，不查
+            top, bottom, _ = content_extent(a)
+            ta = (a.left, round(top * CM), a.left + a.width, round(bottom * CM))
+            for pic in pictures:
+                if overlap(ta, bbox(pic)):
+                    report("⚠️", i, f"「{a.name}」的文字压在「{pic.name}」上：{text_of(a).strip()[:20]}")
         if is_content:
             title = _title(shapes)
             titles.append((i, title))
@@ -391,8 +411,9 @@ def main():
             used = tones_of(colors)
             if len(used) > MAX_TONES + n_legend:
                 report("⚠️", i, f"用了 {len(used)} 种含义色（{'、'.join(sorted(used))}），类型色要配图例")
-            if len(set(body_sizes)) > 4:
-                report("⚠️", i, f"正文字号 {len(set(body_sizes))} 档（上限 4）：{sorted(set(body_sizes))}")
+            tiers = sorted({s for s in body_sizes if s < S_MARK})  # 展示字号（年份、大序号、主角数字）不算档
+            if len(tiers) > 4:
+                report("⚠️", i, f"正文字号 {len(tiers)} 档（上限 4）：{tiers}")
             for label, k in chips.items():
                 if k >= 3:
                     report("⚠️", i, f"标签「{label}」重复 {k} 次，改成分组标题")
@@ -416,6 +437,10 @@ def main():
                                for sh in blocks if sh.width * sh.height / CM ** 2 >= SIG_MIN_AREA))
             if sig:
                 layouts.setdefault(sig, []).append(i)
+            n_content += 1
+            card_area = sum(sh.width * sh.height for sh in blocks if sh.name.startswith("卡片")) / CM ** 2
+            if card_area >= CARDED[0] * tmpl.w * tmpl.h:
+                carded.append(i)
             for card in (sh for sh in shapes if sh.name.startswith("卡片")):
                 head, h, gap, fill, text_only = card_fill(card, shapes)
                 if gap >= CARD_GAP[0] and gap >= CARD_GAP[1] * h:
@@ -434,6 +459,9 @@ def main():
     for pages in layouts.values():
         if len(pages) >= SIG_MAX_REPEAT:
             report("⚠️", pages[0], f"第 {'、'.join(map(str, pages))} 页构图相同，换几页的排法（图为主、全宽流程、表格等）")
+    if len(carded) >= CARDED[2] and len(carded) > CARDED[1] * n_content:
+        report("⚠️", carded[0], f"版式单一：{len(carded)}/{n_content} 张内容页都是卡片铺满正文区（第 {'、'.join(map(str, carded))} 页）。"
+                                "检查图是否被缩成卡片里的小图、各页是否同一结构，穿插几页大图或关键数字的轻页，见 references/layouts.md")
 
     print("\n只读标题测试（按顺序读，应能连成完整的论证）：")
     for i, t in titles:
@@ -443,14 +471,16 @@ def main():
 
 
 def near_misses(blocks):
-    """主要块之间同一条边（左、右、上、下）相差 NEAR_MISS 范围内的情况。"""
+    """主要块之间同一条边（左、右、上、下）相差 NEAR_MISS 范围内的情况。
+    两块的对边已经对齐时不比这条边：上沿对齐、高度不同的一排图，下沿本来就各不相同。"""
     out = []
-    edges = ("左", lambda b: b[0]), ("上", lambda b: b[1]), ("右", lambda b: b[2]), ("下", lambda b: b[3])
+    edges = ("左", 0, 2), ("上", 1, 3), ("右", 2, 0), ("下", 3, 1)
     for k, a in enumerate(blocks):
         for b in blocks[k + 1:]:
-            for side, f in edges:
-                d = abs(f(bbox(a)) - f(bbox(b))) / CM
-                if NEAR_MISS[0] < d < NEAR_MISS[1]:
+            ba, bb = bbox(a), bbox(b)
+            for side, e, opp in edges:
+                d = abs(ba[e] - bb[e]) / CM
+                if NEAR_MISS[0] < d < NEAR_MISS[1] and abs(ba[opp] - bb[opp]) / CM > NEAR_MISS[0]:
                     out.append(f"「{a.name}」和「{b.name}」{side}边差 {d:.2f}cm")
     return out
 
