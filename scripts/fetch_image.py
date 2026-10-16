@@ -26,6 +26,8 @@ import html
 import io
 import json
 import re
+import sys
+import time
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -44,11 +46,17 @@ def http_get(url, params=None, headers=None):
     if params:
         url += "?" + urllib.parse.urlencode(params)
     req = urllib.request.Request(url, headers=headers or {"User-Agent": UA})
-    try:
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            return resp.read(), resp.headers.get("Content-Type", "")
-    except urllib.error.HTTPError as e:
-        raise RuntimeError(f"请求失败（HTTP {e.code}）：{url}") from e
+    # Commons 连续请求十几次后会返回 429，按 Retry-After 等一会儿就能继续
+    for attempt in range(4):
+        try:
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                return resp.read(), resp.headers.get("Content-Type", "")
+        except urllib.error.HTTPError as e:
+            if e.code != 429 or attempt == 3:
+                raise RuntimeError(f"请求失败（HTTP {e.code}）：{url}") from e
+            wait = int(e.headers.get("Retry-After") or 0) or 10 * 2 ** attempt
+            print(f"限流（HTTP 429），{wait} 秒后重试", file=sys.stderr)
+            time.sleep(wait)
 
 
 def strip_html(s):

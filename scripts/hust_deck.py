@@ -49,8 +49,8 @@ from pptx.oxml.ns import nsdecls, qn
 from pptx.util import Emu, Pt
 
 __all__ = ["Deck", "Canvas", "Box", "Grid", "P", "R", "var", "place", "tw", "pt2cm", "fill_text",
-           "INK", "TEXT", "GRAY", "LINE", "WHITE", "TONES", "TYPE_NAMES", "S_TITLE", "S_BODY", "S_SMALL",
-           "MSO_SHAPE", "templates"]
+           "INK", "TEXT", "GRAY", "LINE", "WHITE", "TONES", "TYPE_NAMES", "S_TITLE", "S_BODY", "S_SMALL", "S_MARK", "S_DISPLAY",
+           "MSO_SHAPE", "templates", "aspect", "on_image"]
 
 TEMPLATES = Path(__file__).resolve().parent.parent / "templates"
 
@@ -87,6 +87,9 @@ TYPE_NAMES = {"concept": "概念", "law": "定律", "quantity": "物理量", "fo
 
 # ---- 字号（pt）：页面标题 24 由模板提供；正文只用这三档
 S_TITLE, S_BODY, S_SMALL = 18, 16, 13
+# 展示字号：不算正文字号档。S_MARK 给时间线年份这类大字标记；S_DISPLAY 给大序号、拆解的公式、
+# keynum(big=True) 的主角数字。一页最多用一种，整份只在几种命名页型里用（见 references/layouts.md 第 7 节）
+S_MARK, S_DISPLAY = 28, 36
 
 FONT = "微软雅黑"
 LATIN_MATH = "Times New Roman"
@@ -450,10 +453,12 @@ class Canvas:
             self.num(card.l + 0.9, y, n, tone)
             self.title("w", card.l + 1.6, y, label)
 
-    def keynum(self, x, y, value, label, tone="accent"):
+    def keynum(self, x, y, value, label, tone="accent", big=False):
         """关键数字：18pt 粗体的数值（默认强调色），正下方 13pt 灰色说明，整组以 (x, y) 为中心。
-        用于一页里要听众记住的两三个数字，如结论页的「数字带」、效率对比。"""
-        self.at("s", x, y + 0.4, value, size=S_TITLE, color=TONES[tone].ink, bold=True, kind="关键数字")
+        用于一页里要听众记住的两三个数字，如结论页的「数字带」、效率对比。
+        big=True 时数值用 36pt，给「一个数字撑起一页」的轻页当主角，一页最多一两个。"""
+        self.at("s", x, y + 0.4, value, size=S_DISPLAY if big else S_TITLE, color=TONES[tone].ink, bold=True,
+                kind="关键数字")
         self.at("n", x, y + 0.3, label, size=S_SMALL, color=GRAY, kind="关键数字")
 
     def output(self, card, text, h=1.8, tone="accent"):
@@ -536,17 +541,25 @@ class Canvas:
             self.label((p1[0] + p2[0]) / 2 + shift[0], (p1[1] + p2[1]) / 2 + shift[1], text)
 
     # ---- 图片、公式、表格
-    def figure(self, path, box, align="c", caption=None, kind="图片"):
-        """把图片等比缩放到 box 内（不裁剪、不变形）。align 为 c / w / e / n / s。
-        caption 给出时在图片正下方放 13pt 图注，图片和图注一起放进 box。返回图片实际占用的 Box。"""
+    def figure(self, path, box, align="c", caption=None, kind="图片", fill=False):
+        """把图片等比缩放到 box 内（不变形）。align 为 c / w / e / n / s。
+        caption 给出时在图片正下方放 13pt 图注，图片和图注一起放进 box。返回图片实际占用的 Box。
+        fill=True 时裁掉多出的部分铺满 box（扣掉图注），align 决定保留哪一侧：几张实物照片排成一行要同样大小时用，
+        裁之前用 Read 看原图，别把要讲的部分裁掉。"""
         pw, ph = _png_size(path) if str(path).lower().endswith(".png") else _image_size(path)
         cap_lh = pt2cm(S_SMALL * 1.3)
         cap_h = 0.2 + cap_lh * -(-tw(caption, S_SMALL) // box.w) if caption else 0
-        k = min(box.w / pw, (box.h - cap_h) / ph)
-        w, h = pw * k, ph * k
+        k = (max if fill else min)(box.w / pw, (box.h - cap_h) / ph)
+        w, h = min(pw * k, box.w), min(ph * k, box.h - cap_h)
         x = {"w": box.l, "e": box.r - w}.get(align, box.cx - w / 2)
         y = {"n": box.t, "s": box.b + h + cap_h}.get(align, box.cy + (h + cap_h) / 2)
         pic = self.shapes.add_picture(str(path), ex(x), ey(y), el(w), el(h))
+        if fill:  # 裁剪比例按原图尺寸算；保留的一侧由 align 定
+            cut_w, cut_h = 1 - w / (pw * k), 1 - h / (ph * k)
+            fx = {"w": 0, "e": 1}.get(align, 0.5)
+            fy = {"n": 0, "s": 1}.get(align, 0.5)
+            pic.crop_left, pic.crop_right = cut_w * fx, cut_w * (1 - fx)
+            pic.crop_top, pic.crop_bottom = cut_h * fy, cut_h * (1 - fy)
         self.n += 1
         pic.name = f"{kind} {self.n}"
         if caption:
@@ -559,8 +572,7 @@ class Canvas:
         同一行的图等高、首尾相接占满整行宽度（按各图宽高比分配），所有行再一起缩放到放得进 box 的高度；
         缩放后变窄的行水平居中，整组按 valign（n / m / s）竖直放置。返回实际占用的 Box。
         比逐张 figure() 进固定格子更紧凑：不会因为宽高比不同而在格子里留大块空白。"""
-        aspects = [[(lambda s: s[0] / s[1])(_png_size(p) if str(p).lower().endswith(".png") else _image_size(p))
-                    for p in row] for row in rows]
+        aspects = [[aspect(p) for p in row] for row in rows]
         heights = [(box.w - gap * (len(a) - 1)) / sum(a) for a in aspects]  # 每行占满宽度时的高度
         k = min(1.0, (box.h - gap * (len(rows) - 1)) / sum(heights))
         total = sum(heights) * k + gap * (len(rows) - 1)
@@ -577,13 +589,39 @@ class Canvas:
             y -= h + gap
         return Box(box.l, top, box.w, total)
 
-    def web_figure(self, path, box, caption, align="c"):
+    def strip(self, box, groups, gap=0.25, ggap=1.0, align="c", valign="n"):
+        """把几组图排成等高的一行放进 box：groups 为 [([图, 图], 图注), ...]，组内间距 gap、组间距 ggap，
+        每组下方居中一行 13pt 图注（图注全为 None 时不留位置）。图高取「占满 box 宽度」和「放得下 box 高度」中较小的。
+        align（w / c / e）定水平位置：行式排版里输入图用 e 贴住箭头，结果图用 w 从箭头后排起。
+        图注单行不换行，比所在组宽时要缩短。返回图片（不含图注）占用的 Box。"""
+        aspects = [[aspect(p) for p in paths] for paths, _ in groups]
+        cap_h = pt2cm(S_SMALL * 1.3) + 0.08 if any(cap for _, cap in groups) else 0
+        fixed = gap * sum(len(a) - 1 for a in aspects) + ggap * (len(groups) - 1)
+        total = sum(map(sum, aspects))
+        h = min(box.h - cap_h, (box.w - fixed) / total)
+        w = h * total + fixed
+        x0 = {"w": box.l, "e": box.r - w}.get(align, box.cx - w / 2)
+        y = {"n": box.t, "s": box.b + h + cap_h}.get(valign, box.cy + (h + cap_h) / 2)
+        x = x0
+        for (paths, cap), a in zip(groups, aspects):
+            gx = x
+            for path, ai in zip(paths, a):
+                pic = self.shapes.add_picture(str(path), ex(x), ey(y), el(ai * h), el(h))
+                self.n += 1
+                pic.name = f"图片 {self.n}"
+                x += ai * h + gap
+            if cap:
+                self.at("n", (gx + x - gap) / 2, y - h - 0.08, cap, size=S_SMALL, color=GRAY, kind="图注")
+            x += ggap - gap
+        return Box(x0, y, w, h)
+
+    def web_figure(self, path, box, caption, align="c", fill=False):
         """放 fetch_image.py 取来的网上图片，图注必填：写图里是什么、图上标号的含义。
         页面上不写出处；来源和许可在旁边同名 .json 里，缺 .json 说明不是按流程取来的图，直接报错。"""
         meta = Path(path).with_suffix(".json")
         if not meta.exists():
             raise FileNotFoundError(f"{meta} 不存在：网上的图要用 fetch_image.py 取，记下来源和许可")
-        return self.figure(path, box, align, caption, kind="网图")
+        return self.figure(path, box, align, caption, kind="网图", fill=fill)
 
     def snippet(self, png, anchor, x, y):
         """按原尺寸放 snippet.py 生成的代码 / 终端图片，锚点同 place。
@@ -751,6 +789,19 @@ def _png_text(path):
 def _image_size(path):
     from pptx.parts.image import Image
     return Image.from_file(str(path)).size
+
+
+def aspect(path):
+    """图片宽高比。"""
+    w, h = _png_size(path) if str(path).lower().endswith(".png") else _image_size(path)
+    return w / h
+
+
+def on_image(pic, path, px, py):
+    """原图上的像素点 (px, py)（左上角为原点，在看图时量出）换算成画布坐标；pic 是 figure() 返回的 Box。
+    用于引线标注：引线终点落在图上要讲的部位或图上自带的编号。fill=True 裁剪过的图不能用。"""
+    w, h = _png_size(path) if str(path).lower().endswith(".png") else _image_size(path)
+    return pic.l + px / w * pic.w, pic.t - py / h * pic.h
 
 
 # ============================================================ 版式页
