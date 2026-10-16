@@ -425,7 +425,7 @@ def main():
                     report("⚠️", i, f"卡片「{head}」只有零星几句（文字约占 {fill:.0%}），补充内容或缩小卡片")
                 elif (d := card_density(card, shapes)) and d[0] < CARD_MIN_DENSITY and d[1] >= 15:
                     report("⚠️", i, f"卡片「{head}」内容偏少（约 {d[0]:.2f} 字/cm²，充实的卡片在 {CARD_MIN_DENSITY} 以上），"
-                                    "每条写成具体的事实，或加条目")
+                                    "补机制、对比、数据或例子；页页都薄时先查提纲是否切得太碎")
             if body_chars > MAX_CHARS:
                 report("⚠️", i, f"正文约 {body_chars} 字，超过 {MAX_CHARS} 字，考虑删减或拆页")
             if not notes:

@@ -667,7 +667,7 @@ class Canvas:
 
     def table(self, l, t, widths, rows, row_h=1.0, size=S_BODY, header=True, first_col_bold=False):
         """无底色、无网格的原生表格；header 为 True 时首行加粗并在其下画一条横线。
-        rows 的每个单元格可以是 str、R 或 P；单元格内文字会按列宽换行。"""
+        rows 的每个单元格可以是 str、R、P，或它们的列表（每项一段，用来按意群手动分行）；单元格内文字会按列宽换行。"""
         gf = self.shapes.add_table(len(rows), len(widths), ex(l), ey(t), el(sum(widths)), el(row_h * len(rows)))
         self.n += 1
         gf.name = f"表格 {self.n}"
@@ -687,7 +687,7 @@ class Canvas:
                 cell.margin_left, cell.margin_right = 0, el(0.2)
                 cell.margin_top = cell.margin_bottom = el(0.05)
                 is_head = header and i == 0
-                fill_text(cell.text_frame, val if isinstance(val, P) else P(val), size=size,
+                fill_text(cell.text_frame, val if isinstance(val, (P, list)) else P(val), size=size,
                           color=INK if is_head or (first_col_bold and j == 0) else TEXT,
                           bold=is_head or (first_col_bold and j == 0), anchor="m")
                 cell.vertical_anchor = MSO_ANCHOR.MIDDLE
