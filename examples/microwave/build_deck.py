@@ -5,13 +5,21 @@
 
 提纲按「现象 → 产生 → 吸收 → 分布」组织：开头用四个日常现象引出问题，每章回答其中一两个；
 同一对象（磁控管）、同一机制（分子转向与功率公式）只占一页，定性和定量放在一起讲。
-构图按页轮换：照片 + 对照表、照片 + 步骤、流程 + 数字 + 对比表、原生示意图 + 公式、剖面对比、原生图表、对比表、关键数字。
+页型按页轮换（命名页型见 references/layouts.md 第 7 节）：照片 + 对照表、时间线、引线标注、大序号步骤、公式拆解、
+剖面对比、原生图表、照片 + 对比表、关键数字。器件和历史节点都用实物照片，原生形状只画热量走向和驻波这类拍不出来的东西。
 
 取图命令：
     fetch_image.py get "File:Microwave oven (interior).jpg" figures --name oven_interior --width 1600
     fetch_image.py get "File:Magnetron detail.jpg" figures --name magnetron
     fetch_image.py get "File:2021-06-18 12 31 52 The interior of a General Electric Turntable Microwave Oven Model
         JES738WH 001 in the Franklin Farm section of Oak Hill, Fairfax County, Virginia.jpg" figures --name turntable --width 1600
+    fetch_image.py get "File:Randall and Boot cavity magnetron Science museum.JPG" figures --name magnetron_1940 --width 1400
+    fetch_image.py get "File:Radarange NS Svannah.jpg" figures --name radarange_early
+    fetch_image.py get "File:Amana Radarange Microwave Oven.jpg" figures --name amana_radarange --width 1400
+    fetch_image.py get "File:Plug sockets.jpg" figures --name sockets --width 1200
+    fetch_image.py get "File:Caso SMG20 - MD Microwave Oven Manufacturing MD-801EMR-1-0190.jpg" figures --name transformer --width 1200
+    fetch_image.py get "File:Caso SMG20 - Witol 2M219J-0166.jpg" figures --name magnetron_unit --width 1200
+    fetch_image.py get "File:Waveguide collection.jpg" figures --name waveguides   # 再裁取左上部分 (0, 0, 600, 410)
 
 生成和质检：
     uv run --no-project --with python-pptx --with lxml --with xlsxwriter python -X utf8 build_deck.py <输出.pptx>
@@ -65,132 +73,150 @@ c.text(Box(line.l + 0.5, line.t - 0.2, line.w - 1.0, line.h - 0.4), [
 # ======================================================== 一、微波从哪里来
 deck.divider(SECTIONS[0])
 
-# 照片 + 步骤：部件不单列一张表，按工作过程逐步点到图上的编号，结构和原理在同一页讲完
+# 时间线：横轴贯穿页宽，年份用 S_MARK；节点上方放当年的实物照片，同样大小（fill=True 裁齐）；
+# 没有照片的关键节点（1945 年的偶然发现）用强调色底块写一句经过，圆点也放大
+c = deck.content(SECTIONS[0], "微波炉源于雷达工厂的一次偶然发现，约 30 年后才进入家庭",
+                 notes="磁控管是二战时为雷达研制的，1940 年伯明翰大学造出腔体磁控管原型，输出约 400 W。"
+                       "1945 年雷声公司的斯宾塞在雷达旁工作，发现口袋里的糖果棒化了，第一样有意做熟的食物是爆米花。"
+                       "1947 年第一台商用微波炉 Radarange 上市，高约 1.8 米、耗电 3 千瓦、要水冷，只能租给饭店。"
+                       "之后夏普加了转盘，Amana 做出台式机，到 1970 年代末价格才降到普通家庭买得起，前后约 30 年。")
+AY, pitch = 8.2, 29.8 / 6  # 时间轴的 y、节点间距
+events = [("1940", "magnetron_1940", "原型腔体磁控管", ("伯明翰大学造出", "腔体磁控管原型"), ("输出约 400 W", "用于二战雷达")),
+          ("1945", None, None, ("斯宾塞偶然发现", "微波能加热食物"), ("第一样有意做熟的", "食物是爆米花")),
+          ("1947", "radarange_early", "早期 Radarange", ("第一台商用微波炉", "Radarange 上市"), ("高约 1.8 m", "耗电 3 kW，水冷")),
+          ("1964–1966", "turntable", "带转盘的炉腔", ("夏普推出", "带转盘的微波炉"), ("比早期的搅拌器", "加热更均匀")),
+          ("1967", "amana_radarange", "Amana 台式微波炉", ("Amana 推出", "台式微波炉"), ("体积小到", "能放上台面")),
+          ("1970s 末", "oven_interior", "家用微波炉", ("价格降到", "家庭买得起"), ("1980 年代", "价格快速下降"))]
+c.line((0.6, AY), (30.4, AY), TONES["primary"].base, 2.5, arrow=True)
+pics = {k: c.web_figure(FIG / f"{img}.jpg", Box(0.6 + pitch * (k + 0.5) - 2.2, 13.8, 4.4, 3.6), cap, fill=True)
+        for k, (_, img, cap, _, _) in enumerate(events) if img}
+for k, (year, img, _, head, detail) in enumerate(events):
+    x = 0.6 + pitch * (k + 0.5)
+    t = TONES["primary" if img else "accent"]
+    if not img:  # 和照片同样大小的底块
+        slot = Box(x - 2.2, 13.8, 4.4, pics[0].h)
+        c.tint(slot, "accent")
+        c.text(slot, ["雷达让他", "口袋里的", "糖果棒化了"], color=t.ink, bold=True, align="c", anchor="m", line=22)
+    d = 0.45 if img else 0.7
+    c.shape("节点", MSO_SHAPE.OVAL, place("c", x, AY, d, d), t.base)
+    c.at("s", x, AY + 0.5, year, size=S_MARK, color=t.ink, bold=True)
+    c.text(Box(x - 2.4, AY - 0.55, 4.8, 1.6), list(head), color=INK, bold=True, align="c", line=22)
+    c.text(Box(x - 2.4, AY - 2.3, 4.8, 1.3), list(detail), size=S_SMALL, color=GRAY, align="c", line=18)
+band = Box(0.6, 4.2, 29.8, 2.6)
+c.shape("底色", MSO_SHAPE.ROUNDED_RECTANGLE, band, TONES["primary"].base, radius=0.247)
+c.text(Box(band.l + 0.7, band.t - 0.2, 21.0, band.h - 0.4), [
+    P(R("从雷达到厨房", bold=True, size=S_TITLE)),
+    P("磁控管为二战雷达研制；商用机器又高又重，体积和价格降下来后才进入家庭", before=4),
+], color=WHITE, line=24, anchor="m")
+c.at("s", 26.6, band.cy - 0.05, "约 30 年", size=S_MARK, color=WHITE, bold=True)
+c.at("n", 26.6, band.cy - 0.15, "1947 年商用 → 1970s 末进入家庭", size=S_SMALL, color=WHITE)
+
+# 引线标注：照片居中占半页，部件说明分在两侧浅底块里，引线从块指到图上自带的编号；
+# 按编号在图上的高低排块，引线不交叉。部件不单列一张表，结构和工作过程在同一页讲完
 c = deck.content(SECTIONS[0], "磁控管让电子绕行掠过谐振腔，像吹哨一样激发微波",
-                 notes="对着照片上的编号讲五步。阴极加热发射电子；阳极是一块铜，和阴极之间加直流高压；"
-                       "永磁体的轴向磁场让电子走弯曲的路；电子落到阳极的位置不均匀，电流绕着谐振腔流动来抹平，就形成振荡；"
-                       "最后由输出线和输出针把微波引出去送进波导。谐振腔两壁像电容、圆孔像电感，频率完全由尺寸决定，"
+                 notes="对着照片上的编号讲。阴极 1 加热后发射电子；阳极 2 是一块铜，和阴极之间加直流高压；"
+                       "永磁体 3 的轴向磁场让电子走弯曲的路；电子落到阳极的位置不均匀，电流绕着谐振腔 4 流动来抹平，就形成振荡；"
+                       "最后由输出线 5 和输出针 6 把微波引出去送进波导。谐振腔两壁像电容、圆孔像电感，频率完全由尺寸决定，"
                        "就像气流吹过哨子开口发出固定的音调。")
 gb = Grid(bottombar=True)
-c.web_figure(FIG / "magnetron.jpg", gb.box(0, 0, 5, 6), "1 阴极 2 阳极 3 永磁体 4 谐振腔 5 输出线 6 输出针")
-card = gb.box(5, 0, 7, 6)
-body = c.card(card, header="工作过程（括号里是图上的编号）")
-steps = [("发射", "阴极（1）加热后发射电子"),
-         ("加速", "阳极（2）是铜块，和阴极间加直流高压"),
-         ("绕行", "永磁体（3）的轴向磁场让电子走弯曲的路"),
-         ("振荡", "电子落点不均，电流绕谐振腔（4）流动形成振荡"),
-         ("输出", "输出线（5）和输出针（6）把微波引进波导")]
-for k, (name, desc) in enumerate(steps):
-    y = body.t - 0.9 - k * 1.3
-    c.num(body.l + 0.9, y, str(k + 1))
-    c.at("w", body.l + 1.7, y, P(R(name + "  ", color=INK, bold=True), desc))
-lc = Box(body.l + 0.5, body.b + 3.3, body.w - 1.0, 2.9)
-c.tint(lc)
-c.text(Box(lc.l + 0.5, lc.t - 0.2, lc.w - 1.0, lc.h - 0.4), [
-    P(R("谐振腔为什么能定频率", color=TONES["primary"].ink, bold=True)),
-    P("槽的两壁像电容、圆孔像电感，组成实心铜的 LC 电路", before=4),
-    P("所以频率完全由谐振腔的尺寸决定"),
-], line=24, anchor="m")
-c.bottombar("类比", "像吹哨：气流掠过哨子开口发出固定音调，电子流掠过谐振腔激发出微波")
+img = FIG / "magnetron.jpg"
+pic = c.web_figure(img, gb.box(3, 0, 6, 6), "拆开的家用磁控管，白色数字为部件编号", align="n")
+# 编号在原图上的像素位置（1665×1143，看图量出）
+for col, side, parts in [(0, "left", [(4, "谐振腔", ["电流绕着腔流动", "形成振荡"], (650, 178)),
+                                      (1, "阴极", ["加热后发射电子", "电子从这里出发"], (600, 360)),
+                                      (2, "阳极", ["一块铜，和阴极", "之间加直流高压"], (655, 505))]),
+                         (9, "right", [(3, "永磁体", ["轴向磁场让电子", "走弯曲的路"], (868, 138)),
+                                       (6, "输出针", ["把微波引出", "送进波导"], (1325, 410)),
+                                       (5, "输出线", ["从谐振腔引出", "振荡的能量"], (1345, 870))])]:
+    for k, (n, name, desc, (px, py)) in enumerate(parts):
+        blk = gb.box(col, 2 * k, 3, 2)
+        c.tint(blk)
+        c.num(blk.l + 0.9, blk.t - 0.85, str(n))
+        c.title("w", blk.l + 1.7, blk.t - 0.85, name)
+        c.text(Box(blk.l + 0.6, blk.t - 1.55, blk.w - 1.0, 1.7), desc, line=22)
+        p = on_image(pic, img, px, py)
+        c.line((blk.r if side == "left" else blk.l, blk.t - 0.85), p, TONES["primary"].base, 1.25)
+        c.shape("标注", MSO_SHAPE.OVAL, place("c", *p, 0.75, 0.75), None, TONES["accent"].base, 2.0)
+c.bottombar("类比", "像吹哨：电子流掠过谐振腔激发微波；谐振腔两壁像电容、圆孔像电感，频率由尺寸决定")
 
-# 流程 + 数字 + 对比表：能量怎么走、走掉多少、为什么用这个频率，都是「电变成微波」这一段的事
+# 大序号步骤：五步各配一张实物照片（同样大小），36pt 序号用箭头串起来，不画方框流程；
+# 关键一步（磁控管）整列加强调色底。下面一条讲频段、一块放效率
 c = deck.content(SECTIONS[0], "电能约一半变成 2.45 GHz 微波，这个频段全球通用",
-                 notes="顺着箭头讲能量怎么走，磁控管这一步把电能变成微波，用橙色标出。左下看效率：普通型号只有一半左右，"
-                       "节能型号超过 64%，磁控管 1 kW 输入大约得到 700 W 微波。右下回答为什么用 2.45 GHz："
+                 notes="顺着序号讲能量怎么走：插座的交流电进来，高压变压器升压，再经电容和二极管倍压成直流高压；"
+                       "磁控管这一步把直流电能变成微波，用橙色标出；波导是一段金属管，把微波送进炉腔。"
+                       "右下看效率：普通型号只有一半左右，节能型号超过 64%。左下回答为什么用 2.45 GHz："
                        "微波炉必须用 ISM 频段，避免干扰其他无线电业务；915 MHz 只在部分国家能用，5.8 GHz 产生大功率成本太高，"
                        "2.45 GHz 全球都能用。")
-flow = c.card(g.box(0, 0, 12, 3), header="能量路径")
-xs = [flow.l + flow.w * (k + 0.5) / 5 for k in range(5)]
-y = flow.cy + 0.75
-# 说明按意群手动分行，避免「微波」这类词被自动换行拆开
-steps = [("市电", ["交流电输入"], "primary"), ("高压直流电源", ["变压器升压", "电容和二极管倍压"], "primary"),
-         ("磁控管", ["把直流电能变成", "2.45 GHz 微波"], "accent"), ("波导", ["一段短金属管", "把微波送进炉腔"], "primary"),
-         ("炉腔和食物", ["微波在炉腔里反射", "被食物吸收"], "primary")]
-nodes = []
-for x, (name, desc, tone) in zip(xs, steps):
-    nodes.append(c.node(x, y, name, tone, w=4.6))
-    c.text(Box(x - 2.8, y - 0.9, 5.6, 1.8), desc, align="c", line=22,
-           color=TONES["accent"].ink if tone == "accent" else TEXT)
-for a, b in zip(nodes, nodes[1:]):
-    c.link(a, b, color=TONES["primary"].base, lw=1.5)
-eff = c.card(g.box(0, 3, 5, 3), header="效率：电能有多少变成微波", solid=False, tone="accent")
-for k, (value, label) in enumerate([("低至 50%", "普通型号"), ("超过 64%", "节能型号"), ("约 700 W", "1 kW 输入时")]):
-    c.keynum(eff.l + eff.w * (k + 0.5) / 3, eff.b + (eff.h - 1.1) / 2, value, label)
-body = c.card(g.box(5, 3, 7, 3), header="为什么是 2.45 GHz：只能用 ISM 频段")
+g5 = Grid(cols=5)
+cols = [g5.box(i, 0, 1, 4) for i in range(5)]
+steps = [("市电", "sockets", "墙上的电源插座", ["交流电输入"]),
+         ("高压直流电源", "transformer", "微波炉里的高压变压器", ["变压器升压", "电容和二极管倍压"]),
+         ("磁控管", "magnetron_unit", "家用磁控管", ["把直流电能变成", "2.45 GHz 微波"]),
+         ("波导", "waveguides", "各种矩形波导部件", ["一段金属管", "把微波送进炉腔"]),
+         ("炉腔和食物", "oven_interior", "家用微波炉炉腔", ["微波在炉腔里反射", "被食物吸收"])]
 accent = TONES["accent"].ink
-c.table(body.l + 0.5, body.t - 0.25, [2.8, 2.8, 4.6, body.w - 11.2], [
-    ("频率", "波长", "用在哪", "取舍"),
-    ("915 MHz", "32.8 cm", "工业、商用炉", "只在部分国家可用"),
-    (P(R("2.45 GHz", color=accent, bold=True)), P(R("12.2 cm", color=accent, bold=True)),
-     P(R("家用微波炉", color=accent, bold=True)), P(R("全球都可用", color=accent, bold=True))),
-    ("5.8 GHz", "约 5.2 cm", "不用于烹饪", "大功率成本太高"),
-], row_h=1.05)
+c.tint(cols[2], "accent")
+for i, (col, (name, img, cap, desc)) in enumerate(zip(cols, steps)):
+    key = i == 2
+    c.at("n", col.cx, col.t - 0.15, f"0{i + 1}", size=S_DISPLAY, color=accent if key else TONES["primary"].ink, bold=True)
+    c.web_figure(FIG / f"{img}.jpg", Box(col.l + 0.3, col.t - 1.9, col.w - 0.6, 3.5), cap, fill=True)
+    c.at("n", col.cx, col.t - 5.6, name, size=S_TITLE, color=INK, bold=True)
+    c.text(Box(col.l + 0.2, col.t - 6.4, col.w - 0.4, 1.5), desc, align="c", line=22, color=accent if key else TEXT)
+for a, b in zip(cols, cols[1:]):
+    c.line((a.cx + 1.2, a.t - 1.0), (b.cx - 1.2, a.t - 1.0), TONES["primary"].base, 1.5, arrow=True)
+ism = g.box(0, 4, 8, 2)
+c.tint(ism)
+c.at("nw", ism.l + 0.6, ism.t - 0.35, "为什么是 2.45 GHz：微波炉只能用 ISM 频段", size=S_TITLE, color=TONES["primary"].ink, bold=True)
+w3 = (ism.w - 1.2) / 3
+for k, (f, lam, note, hl) in enumerate([("915 MHz", "波长 32.8 cm", "工业炉，部分国家可用", False),
+                                        ("2.45 GHz", "波长 12.2 cm", "家用炉，全球可用", True),
+                                        ("5.8 GHz", "波长约 5.2 cm", "成本太高，不用于烹饪", False)]):
+    x = ism.l + 0.6 + k * w3
+    c.text(Box(x, ism.t - 1.3, w3 - 0.3, 2.1), [P(R(f, size=S_TITLE, bold=True, color=accent if hl else INK)),
+                                                P(lam, before=2), note], size=S_SMALL, color=accent if hl else TEXT, line=20)
+eff = g.box(8, 4, 4, 2)
+c.tint(eff, "accent")
+c.keynum(eff.cx, eff.cy - 0.45, "50–64%", "电能变成微波的比例（普通到节能型号）", big=True)
 
 # ======================================================== 二、微波怎么加热食物
 deck.divider(SECTIONS[1])
 
-# 原生示意图 + 公式：分子转向（定性）和功率公式（定量）讲的是同一个机制，放在同一页
+# 公式拆解：公式铺满页宽，每一项向下引出一块解释，关键项（损耗因子）用强调色；
+# 分子怎么转、为什么生热写进对应项的解释里，定性和定量在同一页
 c = deck.content(SECTIONS[1], "水分子跟着电场转向发热，功率与频率和场强平方成正比",
-                 notes="水分子氧一端带负电、氢一端带正电。电场每秒振荡 24.5 亿次，分子一直想对齐电场，来回转动，"
-                       "推挤、碰撞周围的分子，电场的能量就变成了热。右边是定量的写法：单位体积吸热功率等于角频率、"
-                       "真空介电常数、损耗因子和场强平方的乘积。损耗因子是介电常数的虚部，衡量材料把场能变成热的能力，"
-                       "含水多的部分大，所以先热；场强大的地方吸热快，这就是第三章热点的来源。"
+                 notes="把公式拆开看。左边 p 是单位体积的吸热功率，就是食物每一处升温有多快。"
+                       "ω 是角频率：电场每秒振荡 24.5 亿次，水分子氧一端带负电、氢一端带正电，一直想对齐电场，跟着来回转。"
+                       "ε0 是常数。损耗因子是介电常数的虚部，分子转动时推挤、碰撞周围分子，把场能变成热；"
+                       "含水多的部分损耗因子大，所以先热。E 的平方说明场强大的地方吸热快，这就是第三章热点的来源。"
                        "常有人说微波炉靠水分子共振，其实所有极性分子在很宽的频率范围都能这样吸热。")
-big = c.card(g.box(0, 0, 5, 6), header="示意：电场反向，水分子跟着翻转")
-
-
-def molecule(cx, cy, up):
-    """水分子示意：up=True 时两个氢原子在上方（正电一端朝上）。"""
-    s = 1 if up else -1
-    o = (cx, cy - 0.55 * s)
-    hs = [(cx - 1.2, cy + 0.5 * s), (cx + 1.2, cy + 0.5 * s)]
-    for h in hs:
-        c.line(o, h, GRAY, 3.0)
-    shp = c.shape("原子", MSO_SHAPE.OVAL, place("c", *o, 1.25, 1.25), TONES["primary"].tint, TONES["primary"].base, 1.5)
-    fill_text(shp.text_frame, "O", size=S_BODY, color=INK, bold=True, align="c", anchor="m", wrap=False)
-    c.at("c", o[0], o[1] - 1.05 * s, "δ−", size=S_SMALL, color=TONES["primary"].ink, bold=True)
-    for h in hs:
-        shp = c.shape("原子", MSO_SHAPE.OVAL, place("c", *h, 0.85, 0.85), TONES["neutral"].tint, GRAY, 1.25)
-        fill_text(shp.text_frame, "H", size=S_SMALL, color=INK, bold=True, align="c", anchor="m", wrap=False)
-        c.at("c", h[0], h[1] + 0.8 * s, "δ+", size=S_SMALL, color=GRAY, bold=True)
-
-
-def field(x, up, outside):
-    """电场箭头；outside 为 "w" 或 "e"，E 标在箭头外侧，不挨着分子的 δ+ 标注。"""
-    y0, y1 = (6.3, 10.0) if up else (10.0, 6.3)
-    c.line((x, y0), (x, y1), TONES["accent"].base, 2.0, arrow=True)
-    dx = -0.2 if outside == "w" else 0.2
-    c.at("e" if outside == "w" else "w", x + dx, 10.0 if up else 6.3, "E", size=S_BODY,
-         color=TONES["accent"].ink, bold=True)
-
-
-# 纵向从上到下：标题（11.25 起）→ 电场箭头和分子（10.0–6.3）→ 要点（5.6 起），互不重叠
-for cx, up, label in [(big.l + big.w * 0.27, True, "电场向上"), (big.l + big.w * 0.73, False, "半周期后：电场向下")]:
-    c.title("n", cx, big.t - 1.45, label)
-    field(cx - 2.3, up, "w")
-    field(cx + 2.1, up, "e")
-    molecule(cx, 8.15, up)
-c.line((big.cx - 0.35, 8.15), (big.cx + 0.35, 8.15), GRAY, 1.5, arrow=True)
-# 窄卡片一行约 18 个字，每条控制在一行内
-c.bullets(Box(big.l + 0.5, 5.6, big.w - 1.0, 3.6),
-          ["电场每秒振荡 24.5 亿次，分子来回转", "转动时推挤、碰撞周围分子，变成热", "对液态水最有效，对脂肪和糖弱得多"],
-          line=26)
-body = c.card(g.box(5, 0, 7, 4), header="定量：介质加热的功率密度", tone="formula")
-eq = Box(body.l + 0.5, body.t - 0.4, body.w - 1.0, 1.5)
-c.tint(eq, "formula")
-c.text(eq, P(*var("p"), " = ", *var("ω"), " ", *var("ε", "0"), " ", *eps_r2(), " ", *var("E"), R("2", latin=LM, sup=True)),
-       size=S_TITLE, color=INK, align="c", anchor="m")
-c.table(eq.l, eq.b - 0.35, [2.0, eq.w - 2.0], [
-    (P(*var("p")), "单位体积吸热功率，W/m³"),
-    (P(*var("ω")), P("角频率：2.45 GHz 时 ", *var("ω"), " = 2π", *var("f"), " ≈ 154 亿 rad/s")),
-    (P(*eps_r2()), "损耗因子（介电常数虚部）：材料把场能变成热的能力"),
-    (P(*var("E")), "电场强度，V/m"),
-], row_h=1.05, header=False)
-body = c.card(g.box(5, 4, 7, 2), header="推论", solid=False)
-c.bullets(Box(body.l + 0.5, body.t - 0.25, body.w - 1.0, body.h - 0.4), [
-    P("含水多的部分 ", *eps_r2(), " 大，先热；", *var("E"), " 大的地方形成热点"),
-    "不是水分子共振：所有极性分子在很宽的频率范围都能吸热",
-], line=24, anchor="m")
+g5b = Grid(cols=5, bottombar=True)
+blocks = [g5b.box(i, 2, 1, 4) for i in range(5)]
+FY = 12.5  # 公式的 y
+terms = [P(*var("p")), P(*var("ω")), P(*var("ε", "0")), P(*eps_r2()), P(*var("E"), R("2", latin=LM, sup=True))]
+for i, (blk, term) in enumerate(zip(blocks, terms)):
+    t = TONES["accent" if i == 3 else "primary"]
+    c.at("c", blk.cx, FY, term, size=S_DISPLAY, color=t.ink if i else INK, kind="公式")
+    c.line((blk.cx, FY - 1.1), (blk.cx, blk.t + 0.1), t.base, 1.5, arrow=True)
+for a, b, s in zip(blocks, blocks[1:], ["=", "·", "·", "·"]):
+    c.at("c", (a.r + b.l) / 2, FY, s, size=S_DISPLAY, color=INK, kind="公式")
+info = [("吸热功率密度", ["单位 W/m³", "食物每一处", "升温有多快"], "要求的量"),
+        ("角频率", [P(*var("ω"), " = 2π", *var("f")), "电场每秒振荡", "24.5 亿次"], "水分子跟着来回转"),
+        ("真空介电常数", ["物理常数", "对所有食物", "都一样"], "不随食物变"),
+        ("损耗因子", ["介电常数的虚部", "分子转动时互相", "推挤碰撞生热"], "含水多的部分大，先热"),
+        ("场强的平方", [P("电场强度 ", *var("E")), "场强翻一倍", "吸热变成 4 倍"], "场强大处成热点")]
+for i, (blk, (name, lines, foot)) in enumerate(zip(blocks, info)):
+    if i == 0:  # 等号左边是结果，用实色块
+        c.shape("底色", MSO_SHAPE.ROUNDED_RECTANGLE, blk, TONES["primary"].base, radius=0.247)
+        fg, fg2, rule = WHITE, WHITE, WHITE
+    else:
+        t = TONES["accent" if i == 3 else "primary"]
+        c.tint(blk, "accent" if i == 3 else "primary")
+        fg, fg2, rule = INK, t.ink, LINE
+    c.at("n", blk.cx, blk.t - 0.5, name, size=S_TITLE, color=fg, bold=True)
+    c.text(Box(blk.l + 0.4, blk.t - 1.6, blk.w - 0.8, 2.7), lines, color=WHITE if i == 0 else TEXT, align="c", line=24)
+    c.line((blk.l + 0.8, blk.b + 2.0), (blk.r - 0.8, blk.b + 2.0), rule, 0.75)
+    c.text(Box(blk.l + 0.4, blk.b + 1.8, blk.w - 0.8, 1.5), foot, size=S_SMALL, color=fg2, bold=True, align="c", anchor="m")
+c.bottombar("误区", "不是水分子共振：所有极性分子在很宽的频率范围都能这样吸热，对液态水最有效")
 
 # 剖面对比：只画微波炉看不出「1 cm」意味着什么，和烤箱放在一起才看出差别
 c = deck.content(SECTIONS[1], "微波直接加热外层约 1 cm，里面靠热传导",
