@@ -21,7 +21,8 @@ uv run --no-project --with pillow --with pygments --with fonttools python -X utf
 
 ## 3. 网上的图
 
-网上的图都可以用，按哪张最合适来选，不受来源限制：
+网上的图都可以用，按哪张最合适来选，不受来源限制。讲到器件、设备、部件、实验装置、历史事件时先找照片，
+找不到再考虑原生示意（用户明确要求过，见 SKILL.md 第 3 节）：
 
 - **Wikimedia Commons**：用 `search` / `get` 直接检索下载，作者和许可自动记下，SVG 可取 PNG 渲染图。
   常用词可用中文（「磁控管」「微波炉」），专业术语用英文更准（「驻波」搜不准，`standing wave` 准）；
@@ -45,6 +46,7 @@ $F add <图片直链> <汇报目录>/figures --name xxx --title 题名 --source 
 - `get` / `add` 在图片旁写同名 `.json`，记下作者、来源、许可（其他网站没写许可的留空，作者不明写「佚名」）；
   `reference` 是 GB/T 7714-2015 的 [EB/OL] 条目，
   需要参考文献页时直接用它。用 `c.web_figure(path, box, 图注)` 放入，缺 `.json` 会报错。
+- 一次连续取十几张图后 Commons 会返回 HTTP 429，脚本会按 Retry-After 等待后重试；批量取图时每张之间停几秒。
 - 取图后用 Read 看一遍：内容对不对、有没有裁掉的标注、图上的字放进页面后是否太小、有没有水印。有缺陷就换图，
   或者改用原生示意图、`chart()` 重画（`examples/microwave/` 的水分子示意和驻波曲线就是这样来的）。
 - **图上自带的编号写进图注**：`get` 会打印 Commons 的描述，里面常有「1) cathode 2) anode」这样的编号含义，

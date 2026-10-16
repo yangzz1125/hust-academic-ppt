@@ -12,7 +12,7 @@
 
 - `examples/microwave/source/*.txt`：英文维基百科条目 Microwave oven、Dielectric heating、Cavity magnetron 的纯文本，
   CC BY-SA 4.0，2026-10-14 通过 MediaWiki API 取得，仅作示例材料。
-- `examples/microwave/figures/`：Wikimedia Commons 图片，作者、来源和许可见各图同名 `.json`。
+- `examples/microwave/figures/`、`examples/layouts/figures/`：Wikimedia Commons 图片，作者、来源和许可见各图同名 `.json`。
 
 ## 参考的项目
 
@@ -26,3 +26,6 @@
   结果页图文比例、同构图重复上限、近似错位和套话检查。
 - [jnu-academic-ppt-skill](https://github.com/LiGonghao3/jnu-academic-ppt-skill)：组会「进展 → 证据 → 卡点 → 下一步」主线、原生图表。
 - [Auto-claude-code-research-in-sleep / paper-slides](https://github.com/wanshuiyin/Auto-claude-code-research-in-sleep)：图占页面主体。
+
+`references/layouts.md` 第 6 节的几种排法参考了 Stanford CS231n 2025 第 9 讲课件、Raúl Gómez Bruballa 博士答辩幻灯片
+（gombru.github.io/phd_defence）和中国科学院等离子体物理研究所研究生招生材料的版式，没有复制其中的文字和图片。
