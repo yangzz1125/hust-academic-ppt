@@ -68,9 +68,9 @@ def load(path):
         where = f"第 {i + 1} 章"
         if not isinstance(part.get("title"), str) or not part["title"]:
             fail(where, "缺少 title")
-        pages = part.get("pages")
-        if not isinstance(pages, list) or not pages:
-            fail(where, "缺少 pages")
+        pages = part.setdefault("pages", [])  # 讲稿确认、切页之前，章节下还没有页
+        if not isinstance(pages, list):
+            fail(where, "pages 应为列表")
         for j, page in enumerate(pages):
             pw = f"{where}「{part['title']}」第 {j + 1} 页"
             pid = page.get("id")
@@ -261,6 +261,9 @@ def cmd_check(args):
             print(f"  {ch['title'] or '（未分章）'}：{c} 字，约 {c / CHARS_PER_MIN:.1f} 分钟")
     else:
         print("还没有讲稿 script.md")
+    if not pages:
+        print("\n还没切页：讲稿确认后在 outline.json 的章节下写 pages，并在讲稿里加 [页 id]")
+        return
     print(f"\n内容页 {len(pages)} 页，已写网页初稿 {drafted} 页")
     print("\n页码  标题 ｜ 要点句 ｜ 过渡句（讲稿里这一页的第一句）：")
     for n, part, page in pages:
