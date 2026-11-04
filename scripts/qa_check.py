@@ -17,7 +17,7 @@
     ⚠️ 正文没有铺满正文区：内容上沿离正文区顶端超过 3cm，或下沿离底端超过 3.5cm（只看外框，卡片内部的空白以渲染图为准）
     ⚠️ 内容页没有口播稿备注
     ⚠️ 正文图片分辨率低于 150dpi（放映时发虚）、网图（web_figure）没有图注
-    ⚠️ 页面标题过短，可能是主题标签而不是结论句；页面标题、章节标签会折成两行
+    ⚠️ 页面标题超过 16 字（标题写主题词，结论写进口播稿第一句）；页面标题、章节标签会折成两行
     ⚠️ 标题、正文、口播稿里有 AI 套话（值得注意的是、综上所述、不是……而是……等）
     ⚠️ 近似错位：两个主要块（卡片、底块、图片、表格、图表）的同一条边相差 0.02–0.25cm，要么对齐要么拉开
        （对边已对齐的不算，如上沿对齐、高度不同的一排图）
@@ -26,7 +26,7 @@
     ⚠️ 页面上的数字在 --source 材料中找不到
     ⚠️ 颜色不在 hust_deck 配色里、含义色超过 3 种（有图例时另加图例里的类型数）、字号超过 4 档（28pt 及以上的展示字号不算）、
        同一标签重复 3 次以上
-最后按顺序列出全部页面标题，供「只读标题」测试。有 ❌ 时退出码为 1。
+最后按顺序列出每页的标题、要点句和过渡句（口播稿第一句），供论证和衔接检查。有 ❌ 时退出码为 1。
 """
 import argparse
 import re
@@ -49,6 +49,8 @@ CM = 360000
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from hust_deck import GRAY, INK, LINE, S_MARK, TEXT, TONES, TYPE_NAMES, WHITE, templates, tw, use_template  # noqa: E402
+
+TITLE_EM = 16  # 页面标题写主题词，16 个汉字以内（content_rules.md 第 3 节）
 
 TYPE_LABELS = tuple(TYPE_NAMES.values()) + ("定律或定理", "公式或方程", "应用", "方法")
 
@@ -393,9 +395,8 @@ def main():
                     report("⚠️", i, f"「{a.name}」的文字压在「{pic.name}」上：{text_of(a).strip()[:20]}")
         if is_content:
             title = _title(shapes)
-            titles.append((i, title))
-            if len(title) < 10:
-                report("⚠️", i, f"标题「{title}」偏短，检查是否写成了结论句")
+            if tw(title, 1) / tw("字", 1) > TITLE_EM:
+                report("⚠️", i, f"标题「{title}」超过 {TITLE_EM} 字：写主题词，结论写进口播稿第一句")
             for sh in shapes:  # 模板里这两个框会自动换行，估算宽度超出就是折成了两行
                 if sh.name in TITLE_NAMES | {"章节标签", "文本框 20"}:
                     run = sh.text_frame.paragraphs[0].runs[0]
@@ -427,6 +428,8 @@ def main():
                 if top > GAP_TOP or bottom > GAP_BOTTOM:
                     report("⚠️", i, f"正文区上方空 {top:.1f}cm、下方空 {bottom:.1f}cm，内容没有铺满，调整布局")
             notes = slide.notes_slide.notes_text_frame.text.strip() if slide.has_notes_slide else ""
+            point = next((sh.text_frame.text.strip() for sh in shapes if sh.name.startswith("要点句")), "")
+            titles.append((i, title, point, re.split(r"(?<=[。！？])", notes, maxsplit=1)[0]))
             slop = sorted({m.group(0) for t in [title, notes, *texts] for m in SLOP_RE.finditer(t)})
             if slop:
                 report("⚠️", i, f"有 AI 套话：{'、'.join(slop)}，删掉或换成具体说法")
@@ -463,9 +466,9 @@ def main():
         report("⚠️", carded[0], f"版式单一：{len(carded)}/{n_content} 张内容页都是卡片铺满正文区（第 {'、'.join(map(str, carded))} 页）。"
                                 "检查图是否被缩成卡片里的小图、各页是否同一结构，穿插几页大图或关键数字的轻页，见 references/layouts.md")
 
-    print("\n只读标题测试（按顺序读，应能连成完整的论证）：")
-    for i, t in titles:
-        print(f"  {i:>2}. {t}")
+    print("\n标题 ｜ 要点句 ｜ 过渡句（口播第一句）：按顺序读，应能连成完整的论证、前后接得上")
+    for i, t, point, bridge in titles:
+        print(f"  {i:>2}. {t} ｜ {point or '（没有要点句）'} ｜ {bridge or '（没有口播稿）'}")
     print(f"\n❌ {errors} 项，⚠️ {warns} 项")
     sys.exit(1 if errors else 0)
 

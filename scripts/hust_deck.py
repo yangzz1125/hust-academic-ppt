@@ -91,6 +91,9 @@ S_TITLE, S_BODY, S_SMALL = 18, 16, 13
 # keynum(big=True) 的主角数字。一页最多用一种，整份只在几种命名页型里用（见 references/layouts.md 第 7 节）
 S_MARK, S_DISPLAY = 28, 36
 
+# 要点句条：上沿离正文区顶端 0.4，高 1.0；Grid(lead=True) 在它下面再空一个格间距
+LEAD_TOP, LEAD_H = 0.4, 1.0
+
 FONT = "微软雅黑"
 LATIN_MATH = "Times New Roman"
 
@@ -192,17 +195,18 @@ class Grid:
     """正文区的排版网格：cols 列 × rows 行，格间距统一为 gap（cm）。
     块的四条边都落在网格线上，所以不同大小的卡片随意组合（便当布局）也能自然对齐、间距一致。
     左右各留 0.6，上边留 0.5；下边 y 1.6，bottombar=True 时留到 y 2.2 给总结条。
-    华科模板（31 × 14.3）上即 x 0.6–30.4、y 1.6–13.8。要在 Deck 创建之后用。
+    lead=True 时上边让出要点句条（deck.content(..., point=...) 画在 y 13.9–12.9），网格从 y 12.3 起。
+    华科模板（31 × 14.3）上即 x 0.6–30.4、y 1.6–13.8（有要点句时 y 1.6–12.3）。要在 Deck 创建之后用。
 
         g = Grid()
         c.card(g.box(0, 0, 8, 6))      # 第 0 列、第 0 行起，占 8 列 6 行：图为主
         c.card(g.box(8, 0, 4, 6))      # 右侧窄栏
     """
 
-    def __init__(self, cols=12, rows=6, gap=0.6, bottombar=False):
+    def __init__(self, cols=12, rows=6, gap=0.6, bottombar=False, lead=False):
         t = current()
         self.cols, self.rows, self.gap = cols, rows, gap
-        self.l, self.t = 0.6, t.h - 0.5
+        self.l, self.t = 0.6, t.h - (LEAD_TOP + LEAD_H + 0.6 if lead else 0.5)  # 要点句条下固定空 0.6，和格间距无关
         bottom = 2.2 if bottombar else 1.6
         self.cw = (t.w - 0.6 - self.l - gap * (cols - 1)) / cols
         self.rh = (self.t - bottom - gap * (rows - 1)) / rows
@@ -364,14 +368,16 @@ class Canvas:
             shp._element.spPr.append(parse_xml(SHADOW))
         return shp
 
-    def card(self, box, header=None, tone="primary", solid=True, highlight=False, header_h=1.1):
-        """白底圆角卡片，带浅阴影。
+    def card(self, box, header=None, tone="primary", solid=True, highlight=False, header_h=1.1, sub=None, shadow=False):
+        """白底圆角卡片，细边框。并排的同级卡片不加阴影（用户明确要求过）；
+        shadow=True 只给真正要浮起来的那一块（如压在照片上的说明框）。
         header 给出时在顶部画标题条：solid=True 为实色白字，False 为浅底深色字。
+        sub 给出时在标题条下写一行 13pt 灰字副标题（初稿的 .sub），要和 header 一起用。
         highlight=True 时边框改为 tone 的实色粗线，标出本页重点。
-        返回标题条以下的正文区域 Box（没有标题条时返回卡片本身）。"""
+        返回标题条（和副标题）以下的正文区域 Box（没有标题条时返回卡片本身）。"""
         t = TONES[tone]
         self.shape("卡片", MSO_SHAPE.ROUNDED_RECTANGLE, box, WHITE,
-                   t.base if highlight else LINE, 1.75 if highlight else 0.8, radius=0.247, shadow=True)
+                   t.base if highlight else LINE, 1.75 if highlight else 0.8, radius=0.247, shadow=shadow)
         if header is None:
             return box
         bar = Box(box.l, box.t, box.w, header_h)
@@ -380,6 +386,10 @@ class Canvas:
         shp.adjustments[1] = 0
         fill_text(shp.text_frame, header, size=S_TITLE, color=WHITE if solid else t.ink, bold=True,
                   anchor="m", wrap=False, margin=(0.5, 0.3, 0, 0))
+        if sub:
+            self.text(Box(box.l + 0.5, box.t - header_h - 0.1, box.w - 1.0, 0.8), sub, kind="副标题",
+                      size=S_SMALL, color=GRAY, anchor="m", wrap=False)
+            header_h += 0.8
         return Box(box.l, box.t - header_h, box.w, box.h - header_h)
 
     def tint(self, box, tone="primary"):
@@ -461,6 +471,40 @@ class Canvas:
                 kind="关键数字")
         self.at("n", x, y + 0.3, label, size=S_SMALL, color=GRAY, kind="关键数字")
 
+    # ---- 卡片里的小组件：和网页初稿（scripts/site.html）里的同名组件一一对应
+    def kpis(self, box, items, tone="accent", big=False):
+        """关键数字行（初稿的 .kpis）：items 为 [(数值, 说明)]，在 box 里等分排开，相邻两项之间一条竖线。"""
+        w = box.w / len(items)
+        # keynum 的 (x, y) 是数值和说明之间的缝，不是整组的中心；按数值行高下移，让整组在 box 里纵向居中
+        y = box.cy - (0.1 + pt2cm((S_DISPLAY if big else S_TITLE) * 1.3)) / 2
+        for k, (value, label) in enumerate(items):
+            self.keynum(box.l + w * (k + 0.5), y, value, label, tone, big)
+            if k:
+                self.line((box.l + w * k, box.t - 0.3), (box.l + w * k, box.b + 0.3), LINE, 0.8)
+
+    def chips(self, x, y, labels, tone="primary", gap=0.25):
+        """一排关键词胶囊（初稿的 .chips）：从左上角 (x, y) 起横排 chip()，返回整排的 Box。"""
+        x0 = x
+        for label in labels:
+            b = self.chip("nw", x, y, label, tone)
+            x = b.r + gap
+        return Box(x0, y, x - gap - x0, b.h)
+
+    def timeline(self, box, items, tone="primary"):
+        """迷你时间线（初稿的 .tl）：box 顶部一条横线，等分放圆点，点下写 16pt 粗体名称和 13pt 灰字说明。
+        items 为 [(名称, 说明)] 或 [名称]。返回各圆点的 x。"""
+        w = box.w / len(items)
+        xs = [box.l + w * (k + 0.5) for k in range(len(items))]
+        y = box.t - 0.4
+        self.line((xs[0], y), (xs[-1], y), TONES[tone].base, 1.5)
+        for x, item in zip(xs, items):
+            name, note = (item, None) if isinstance(item, str) else item
+            self.shape("节点", MSO_SHAPE.OVAL, place("c", x, y, 0.36, 0.36), TONES[tone].base)
+            self.at("n", x, y - 0.4, name, color=INK, bold=True)
+            if note:
+                self.at("n", x, y - 1.1, note, size=S_SMALL, color=GRAY)
+        return xs
+
     def output(self, card, text, h=1.8, tone="accent"):
         """卡片底部的「产出」框：默认橙色浅底，13pt 标签 + 13pt 粗体内容。"""
         box = Box(card.l + 0.3, card.b + 0.3 + h, card.w - 0.6, h)
@@ -469,6 +513,14 @@ class Canvas:
                   [R("产出", color=TONES[tone].ink, bold=True), P(R(text, color=INK, bold=True), before=2)],
                   size=S_SMALL, anchor="m")
         return box
+
+    def lead(self, text):
+        """要点句条：正文区顶部一条主色浅底，18pt 粗体写这一页要听众记住的一句话。由 deck.content(point=) 调用。"""
+        t = current()
+        bar = Box(0.6, t.h - LEAD_TOP, t.w - 1.2, LEAD_H)
+        self.tint(bar)
+        self.text(Box(bar.l + 0.5, bar.t, bar.w - 1.0, bar.h), text, kind="要点句", size=S_TITLE,
+                  color=TONES["primary"].ink, bold=True, anchor="m", wrap=False)
 
     def bottombar(self, label, text, y=0.35):
         """页底总结条：左侧粗体标签，分隔线，右侧一句话。左右边和 Grid 的卡片对齐（左右各留 0.6）。"""
@@ -935,14 +987,18 @@ class Deck:
         _set_text(_find(s.shapes, "章节标题"), f"{cn_num(self.sections.index(name) + 1)}、{name}")
         return s
 
-    def content(self, section, title, notes=""):
-        """内容页：右上角章节标签 + 页面标题（写结论句）+ 口播稿备注，返回正文画布。"""
+    def content(self, section, title, notes="", point=None):
+        """内容页：右上角章节标签 + 页面标题（写主题词）+ 口播稿备注，返回正文画布。
+        point 是这一页的要点句（20 字以内），画在正文区顶部的浅底条里；给了 point，正文就用 Grid(lead=True)。"""
         s = self._clone(self.content_t)
         _set_text(_find(s.shapes, "章节标签"), section)
         _set_text(_find(s.shapes, "页面标题"), title)
         if notes:
             s.notes_slide.notes_text_frame.text = notes
-        return Canvas(s)
+        c = Canvas(s)
+        if point:
+            c.lead(point)
+        return c
 
     def save(self, path):
         lst = self.prs.slides._sldIdLst

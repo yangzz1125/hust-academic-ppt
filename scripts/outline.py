@@ -1,51 +1,58 @@
-"""大纲（outline.json）的检查、便利贴墙和策划稿。
+"""讲稿（script.md）、大纲（outline.json）、网页初稿和汇报网页（讲稿 + 便签画布 + 翻页预览）。
 
-一份汇报的大纲写成一个 JSON 文件，三个子命令都读它：
-
-    python outline.py check outline.json              # 校验格式，列出只读标题序列和提示
-    python outline.py wall  outline.json wall.html    # 便利贴墙：一页一张便利贴，带构图缩略图，给用户审大纲
-    python outline.py draft outline.json draft.pptx   # 策划稿：真模板 + 每块的位置和内容，图表位置用虚线占位框
+    python outline.py check outline.json                    # 校验讲稿、大纲和网页初稿，列出每页的标题、要点句、过渡句和字数
+    python outline.py site  outline.json site.html [--design <设计稿 png 目录>]
+                                                            # 生成汇报网页：讲稿、便签画布、翻页预览（搜索 / 初稿 / 设计稿）
+    python outline.py chrome hust                           # 从模板生成网页初稿用的外观底图（换模板或改模板后跑一次）
 
 运行：uv run --no-project --with python-pptx --with lxml python -X utf8 outline.py <子命令> ...
+chrome 还要用 render.py（LibreOffice）渲染，结果存在 templates/<模板>/web/，生成后提交进仓库，平时不用再跑。
 
-格式（字段说明见 references/outline.md）：
-
-    {
-      "meta": {"title": "...", "presenter": "...", "date": "...", "template": "hust",
-               "occasion": "...", "audience": "...", "minutes": 10, "thesis": "..."},
-      "parts": [
-        {"title": "章节名", "toc": true, "pages": [
-          {"title": "结论句标题", "composition": "图为主：左照片，右要点",
-           "cols": 12, "bottombar": ["类比", "一句话"],
-           "blocks": [{"grid": [0, 0, 8, 6], "kind": "图片", "content": "磁控管剖面照片，标 1–5 编号"},
-                      {"grid": [8, 0, 4, 6], "kind": "卡片", "header": "工作过程", "content": ["...", "..."]}],
-           "notes": "口播稿", "sources": ["source/xxx.txt"]}]}
-      ]
-    }
+一份汇报的目录里：script.md 是讲稿（先写，用户确认后再切页），outline.json 是每页的标题、要点句和出处，
+draft/<页 id>.html 是网页初稿。讲稿里用单独一行 [页 id] 标出下面几段属于哪一页，这几段就是这一页的口播稿，
+第一句是过渡句。设计稿脚本用 page_notes() 取口播稿，不另写。格式和组件见 references/outline.md。
+网页的外壳（样式、视图、脚本）在同目录的 site.html，数据替换其中 id="data" 的占位符。
 """
 import argparse
+import base64
 import html
 import json
+import re
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from hust_deck import *  # noqa: E402
-from hust_deck import cn_num, pt2cm, tw  # noqa: E402
-from pptx.enum.dml import MSO_LINE  # noqa: E402
+from lxml import etree
 
-TEXT_KINDS = {"卡片", "文字"}
-FIGURE_KINDS = {"图片", "图表", "表格", "节点图", "公式", "代码"}
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from hust_deck import Deck, TONES, cn_num, pt2cm, tw, use_template  # noqa: E402
+from pptx.enum.shapes import PP_PLACEHOLDER  # noqa: E402
+from pptx.opc.constants import RELATIONSHIP_TYPE as RT  # noqa: E402
+from pptx.oxml.ns import qn  # noqa: E402
+
+SCRIPTS = Path(__file__).resolve().parent
+TEMPLATES = SCRIPTS.parent / "templates"
 ROWS = 6
-TITLE_EM = 32  # 华科模板标题框宽 28.9 cm，24pt 一行约放 32 个汉字；其他模板以 draft 渲染和 qa_check 为准
+TITLE_EM = 16  # 页面标题写主题词，16 个汉字以内（content_rules.md 第 3 节）
+POINT_EM = 20  # 要点句 20 个汉字以内
+CHARS_PER_MIN = 200  # 讲稿按每分钟约 200 字估算时长，只作参考（用户明确说过：流畅比字数要紧）
+ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
+MARK_RE = re.compile(r"^\[([a-z0-9][a-z0-9_-]*)\]$")
+GRID_TAG_RE = re.compile(r"<[^>]*\bdata-grid=\"([^\"]*)\"[^>]*>")
+COLS_RE = re.compile(r"\bdata-cols=\"(\d+)\"")
+VARIANT_RE = re.compile(r"(<section\b[^>]*\bclass=\"variant\"[^>]*>)(.*?)</section>", re.S)
+LABEL_RE = re.compile(r"\bdata-label=\"([^\"]*)\"")
 
 
 def fail(where, msg):
     raise ValueError(f"{where}：{msg}")
 
 
+# ---------------------------------------------------------------- 大纲
+
 def load(path):
-    """读入并校验大纲。大纲由人和模型手写，这里是信任边界：缺字段、类型不对、块越界或重叠都直接报错。"""
+    """读入并校验大纲和讲稿。两者都是手写的，这里是信任边界：缺字段、类型不对、id 重复、讲稿里的页 id 不存在都直接报错。"""
     data = json.loads(Path(path).read_text(encoding="utf-8"))
     meta = data.get("meta")
     if not isinstance(meta, dict):
@@ -56,6 +63,7 @@ def load(path):
     parts = data.get("parts")
     if not isinstance(parts, list) or not parts:
         fail("parts", "缺少章节列表")
+    ids = []
     for i, part in enumerate(parts):
         where = f"第 {i + 1} 章"
         if not isinstance(part.get("title"), str) or not part["title"]:
@@ -64,61 +72,94 @@ def load(path):
         if not isinstance(pages, list) or not pages:
             fail(where, "缺少 pages")
         for j, page in enumerate(pages):
-            check_page(page, f"{where}「{part['title']}」第 {j + 1} 页")
+            pw = f"{where}「{part['title']}」第 {j + 1} 页"
+            pid = page.get("id")
+            if not isinstance(pid, str) or not ID_RE.match(pid):
+                fail(pw, "id 应为小写字母、数字、- 或 _ 组成的字符串（讲稿标记 [id] 和网页初稿 draft/<id>.html 都用它）")
+            if pid in ids:
+                fail(pw, f"id「{pid}」重复")
+            ids.append(pid)
+            for k in ("title", "point"):
+                if k in page and not (isinstance(page[k], str) and page[k]):
+                    fail(pw, f"{k} 应为非空字符串")
+            if "title" not in page:
+                fail(pw, "缺少 title（主题词标题）")
+            for k in ("sources", "research"):
+                v = page.get(k, [])
+                if not (isinstance(v, list) and all(isinstance(s, str) for s in v)):
+                    fail(pw, f"{k} 应为字符串列表")
+            bar = page.get("bottombar")
+            if bar is not None and not (isinstance(bar, list) and len(bar) == 2 and all(isinstance(s, str) for s in bar)):
+                fail(pw, "bottombar 应为 [标签, 一句话]")
+    data["dir"] = Path(path).resolve().parent
+    data["script"] = load_script(data["dir"] / "script.md", ids)
     return data
 
 
-def check_page(page, where):
-    if not isinstance(page.get("title"), str) or not page["title"]:
-        fail(where, "缺少 title（结论句标题）")
-    blocks = page.get("blocks")
-    if not isinstance(blocks, list) or not blocks:
-        fail(where, "缺少 blocks")
-    bar = page.get("bottombar")
-    if bar is not None and not (isinstance(bar, list) and len(bar) == 2 and all(isinstance(s, str) for s in bar)):
-        fail(where, "bottombar 应为 [标签, 一句话]")
-    cells = {}
-    for k, b in enumerate(blocks):
-        bw = f"{where} 第 {k + 1} 块"
-        if b.get("kind") not in TEXT_KINDS | FIGURE_KINDS:
-            fail(bw, f"kind 应为 {'、'.join(sorted(TEXT_KINDS | FIGURE_KINDS))} 之一，实际是 {b.get('kind')!r}")
-        g = b.get("grid")
-        if not (isinstance(g, list) and len(g) == 4 and all(isinstance(v, int) for v in g)):
-            fail(bw, "grid 应为 [列, 行, 占几列, 占几行] 四个整数")
-        cols = block_cols(page, b)
-        col, row, w, h = g
-        if col < 0 or row < 0 or w < 1 or h < 1 or col + w > cols or row + h > ROWS:
-            fail(bw, f"grid {g} 超出 {cols}×{ROWS} 网格")
-        content = b.get("content")
-        if not (isinstance(content, str) or (isinstance(content, list) and all(isinstance(s, str) for s in content))):
-            fail(bw, "content 应为字符串或字符串列表")
-        # 不同列数的网格按页宽比例换算成 60 等分再查重叠
-        x0, x1 = col * 60 // cols, (col + w) * 60 // cols
-        for x in range(x0, x1):
-            for y in range(row, row + h):
-                if (x, y) in cells:
-                    fail(bw, f"和第 {cells[(x, y)] + 1} 块重叠")
-                cells[(x, y)] = k
+def load_script(path, ids):
+    """读讲稿：## 开头是章节，单独一行 [页 id] 开始一页，空行分段。返回 [{"title": 章节, "paras": [(页 id 或 None, 段落)]}]。
+    讲稿还没切页时没有 [id] 标记，段落的页 id 都是 None。没有 script.md 时返回空列表。"""
+    if not path.exists():
+        return []
+    chapters, page, buf = [], None, []
+
+    def flush():
+        if buf:
+            if not chapters:
+                chapters.append({"title": "", "paras": []})
+            chapters[-1]["paras"].append((page, "".join(s.strip() for s in buf)))
+            buf.clear()
+
+    seen = []
+    for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        s = line.strip()
+        if s.startswith("# ") and not s.startswith("## "):
+            continue
+        if s.startswith("## "):
+            flush()
+            chapters.append({"title": s[3:].strip(), "paras": []})
+            page = None
+        elif MARK_RE.match(s):
+            flush()
+            page = MARK_RE.match(s).group(1)
+            if page not in ids:
+                fail(f"{path.name} 第 {n} 行", f"[{page}] 不是 outline.json 里的页 id")
+            if page in seen:
+                fail(f"{path.name} 第 {n} 行", f"[{page}] 出现了两次，同一页的段落要连在一起")
+            seen.append(page)
+        elif not s:
+            flush()
+        else:
+            buf.append(s)
+    flush()
+    order = [i for i in ids if i in seen]
+    if seen != order:
+        fail(path.name, f"页的顺序和 outline.json 不一致：讲稿里是 {'、'.join(seen)}")
+    return chapters
 
 
-def block_cols(page, block):
-    return block.get("cols", page.get("cols", 12))
+def page_paras(data):
+    """{页 id: [段落]}：讲稿里属于每一页的段落。"""
+    out = {}
+    for ch in data["script"]:
+        for pid, text in ch["paras"]:
+            if pid:
+                out.setdefault(pid, []).append(text)
+    return out
 
 
-def em(s):
-    """按汉字宽度折算的字数（西文按 0.55 个）。"""
-    return tw(s, 1) / pt2cm(1)
+def page_notes(outline_path):
+    """{页 id: 口播稿}：讲稿里属于这一页的段落，段间换行。设计稿脚本用它写 deck.content(..., notes=)。"""
+    return {k: "\n".join(v) for k, v in page_paras(load(outline_path)).items()}
 
 
-def signature(page):
-    """构图签名：各块按页宽比例换算后的位置，连续两页相同说明排法没变。"""
-    return tuple(sorted((b["grid"][0] / block_cols(page, b), b["grid"][1],
-                         b["grid"][2] / block_cols(page, b), b["grid"][3]) for b in page["blocks"]))
+def first_sentence(text):
+    return re.split(r"(?<=[。！？])", text.strip(), maxsplit=1)[0] if text else ""
 
 
 def walk(data):
-    """按幻灯片顺序给出 (页码, 章节, 页面)；过渡页只占页码。页码和 draft 生成的 pptx 一致。"""
-    n = 2  # 封面、目录
+    """按幻灯片顺序给出 (页码, 章节, 页面)，页码和设计稿 pptx 一致：封面 1、目录 2，每个进目录的章节前一张过渡页。"""
+    n = 2
     for part in data["parts"]:
         if part.get("toc", True):
             n += 1
@@ -127,190 +168,276 @@ def walk(data):
             yield n, part, page
 
 
+def toc_parts(data):
+    return [p for p in data["parts"] if p.get("toc", True)]
+
+
+def em(s):
+    """按汉字宽度折算的字数（西文按 0.55 个）。"""
+    return tw(s, 1) / pt2cm(1)
+
+
+def chars(text):
+    """讲稿字数：汉字和字母数字都算，标点和空格不算。"""
+    return len(re.findall(r"[一-鿿A-Za-z0-9]", text))
+
+
+# ---------------------------------------------------------------- 网页初稿
+
+def variants(data, page):
+    """读 draft/<id>.html，返回 [(方案名, HTML)]。片段里有 <section class="variant" data-label="…"> 时每个是一个方案。"""
+    f = data["dir"] / "draft" / f"{page['id']}.html"
+    if not f.exists():
+        return []
+    src = f.read_text(encoding="utf-8")
+    secs = list(VARIANT_RE.finditer(src))
+    if not secs:
+        return [("", src)]
+    out = []
+    for m in secs:
+        lab = LABEL_RE.search(m.group(1))
+        out.append((lab.group(1) if lab else f"方案 {len(out) + 1}", m.group(2)))
+    return out
+
+
+def check_blocks(src, page, where):
+    """每块的 data-grid 在网格内、互不重叠。不同列数的网格按页宽比例换算成 60 等分再查重叠。"""
+    cells = {}
+    for k, m in enumerate(GRID_TAG_RE.finditer(src)):
+        bw = f"{where} 第 {k + 1} 块"
+        try:
+            col, row, w, h = (int(v) for v in m.group(1).split(","))
+        except ValueError:
+            fail(bw, f"data-grid=\"{m.group(1)}\" 应为「列,行,占几列,占几行」四个整数")
+        c = COLS_RE.search(m.group(0))
+        cols = int(c.group(1)) if c else page.get("cols", 12)
+        if col < 0 or row < 0 or w < 1 or h < 1 or col + w > cols or row + h > ROWS:
+            fail(bw, f"data-grid {col},{row},{w},{h} 超出 {cols}×{ROWS} 网格")
+        for x in range(col * 60 // cols, (col + w) * 60 // cols):
+            for y in range(row, row + h):
+                if (x, y) in cells:
+                    fail(bw, f"和第 {cells[(x, y)] + 1} 块重叠")
+                cells[(x, y)] = k
+    if not cells:
+        fail(where, "没有带 data-grid 的块")
+
+
 def hints(data):
-    """每页的提示：标题过长、构图和上一页相同、没写口播稿。返回 {页码: [提示]}。"""
-    out, prev = {}, None
+    """每页的提示：标题偏长、没写或太长的要点句、讲稿里没有这一页。返回 {页码: [提示]}。"""
+    paras = page_paras(data)
+    out = {}
     for n, _, page in walk(data):
         h = []
         if em(page["title"]) > TITLE_EM:
-            h.append(f"标题约 {em(page['title']):.0f} 字，一行放不下（约 {TITLE_EM} 字）")
-        sig = signature(page)
-        if sig == prev:
-            h.append("构图和上一页相同")
-        prev = sig
-        if not page.get("notes"):
-            h.append("没写口播稿")
+            h.append(f"标题约 {em(page['title']):.0f} 字，写主题词（{TITLE_EM} 字以内）")
+        if not page.get("point"):
+            h.append("没写要点句")
+        elif em(page["point"]) > POINT_EM:
+            h.append(f"要点句约 {em(page['point']):.0f} 字，压到 {POINT_EM} 字以内")
+        if data["script"] and page["id"] not in paras:
+            h.append("讲稿里没有这一页（缺 [id] 标记）")
         out[n] = h
     return out
 
 
-# ---------------------------------------------------------------- check
-
 def cmd_check(args):
     data = load(args.outline)
-    hs = hints(data)
+    paras = page_paras(data)
     pages = list(walk(data))
-    print(f"内容页 {len(pages)} 页", end="")
-    if "minutes" in data["meta"]:
-        print(f"，时长 {data['meta']['minutes']} 分钟（约每分钟一页）", end="")
-    print("\n\n只读标题：")
+    drafted = 0
     for n, part, page in pages:
-        print(f"  {n:>2}  [{part['title']}] {page['title']}")
-    flagged = [(n, h) for n, h in hs.items() if h]
+        vs = variants(data, page)
+        drafted += bool(vs)
+        for label, src in vs:
+            check_blocks(src, page, f"第 {n} 页「{page['title']}」{label}")
+    if data["script"]:
+        total = sum(chars(t) for ch in data["script"] for _, t in ch["paras"])
+        print(f"讲稿 {total} 字，按每分钟 {CHARS_PER_MIN} 字约 {total / CHARS_PER_MIN:.1f} 分钟", end="")
+        if data["meta"].get("minutes"):
+            print(f"，汇报时长 {data['meta']['minutes']} 分钟", end="")
+        print("（字数只作估算参考，不是硬性要求；讲得顺最要紧）")
+        for ch in data["script"]:
+            c = sum(chars(t) for _, t in ch["paras"])
+            print(f"  {ch['title'] or '（未分章）'}：{c} 字，约 {c / CHARS_PER_MIN:.1f} 分钟")
+    else:
+        print("还没有讲稿 script.md")
+    print(f"\n内容页 {len(pages)} 页，已写网页初稿 {drafted} 页")
+    print("\n页码  标题 ｜ 要点句 ｜ 过渡句（讲稿里这一页的第一句）：")
+    for n, part, page in pages:
+        bridge = first_sentence(paras.get(page["id"], [""])[0])
+        print(f"  {n:>2}  {page['title']} ｜ {page.get('point', '（没写要点句）')} ｜ {bridge or '—'}")
+    flagged = [(n, h) for n, h in hints(data).items() if h]
     if flagged:
         print("\n提示：")
         for n, h in flagged:
             print(f"  ⚠️ 第 {n} 页：{'；'.join(h)}")
 
 
-# ---------------------------------------------------------------- wall
+# ---------------------------------------------------------------- 模板外观底图
 
-WALL_CSS = """
-:root { --bg:#f4f1ea; --note:#fff8d6; --note-line:#e9dc9c; --ink:#1e293b; --text:#334155; --gray:#64748b;
-  --primary:#0259a0; --accent:#e8710a; --cell:#ffffff; --cell-line:#cbd5e1; --fig:#cfe0f5; --warn-bg:#fdecdc; }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#1b1d22; --note:#2b2a22; --note-line:#4a4630;
-  --ink:#f1f5f9; --text:#cbd5e1; --gray:#94a3b8; --primary:#6aa8e8; --accent:#f5a25d; --cell:#2f3440; --cell-line:#4b5263; --fig:#233650; --warn-bg:#3d2a1c; } }
-:root[data-theme="dark"] { --bg:#1b1d22; --note:#2b2a22; --note-line:#4a4630; --ink:#f1f5f9; --text:#cbd5e1; --gray:#94a3b8;
-  --primary:#6aa8e8; --accent:#f5a25d; --cell:#2f3440; --cell-line:#4b5263; --fig:#233650; --warn-bg:#3d2a1c; }
-* { box-sizing:border-box; }
-body { margin:0; background:var(--bg); color:var(--text); font:15px/1.55 "Microsoft YaHei","PingFang SC",sans-serif; }
-main { max-width:1280px; margin:0 auto; padding:24px 16px 48px; }
-h1 { color:var(--ink); font-size:24px; margin:0 0 6px; }
-.meta { color:var(--gray); margin:0 0 4px; }
-.thesis { color:var(--ink); margin:8px 0 20px; }
-.thesis b { color:var(--accent); }
-h2 { color:var(--primary); font-size:18px; margin:28px 0 10px; }
-.wall { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:16px; }
-.note { background:var(--note); border:1px solid var(--note-line); border-radius:4px; padding:12px 14px 14px;
-  box-shadow:0 2px 6px rgba(0,0,0,.08); display:flex; flex-direction:column; gap:8px; }
-.no { color:var(--gray); font-size:13px; }
-.title { color:var(--ink); font-weight:700; font-size:16px; }
-svg { width:100%; height:auto; display:block; }
-svg rect.cell { fill:var(--cell); stroke:var(--cell-line); stroke-width:.4; }
-svg rect.fig { fill:var(--fig); stroke:var(--primary); stroke-dasharray:1.5 1; stroke-width:.4; }
-svg rect.bar { fill:var(--accent); opacity:.5; }
-svg text { fill:var(--ink); font-size:5px; }
-.comp { color:var(--gray); font-size:13px; }
-ul { margin:0; padding-left:18px; font-size:13px; }
-li b { color:var(--ink); }
-.notes { font-size:13px; color:var(--gray); border-top:1px dashed var(--note-line); padding-top:6px; }
-.warn { font-size:13px; color:var(--accent); background:var(--warn-bg); border-radius:3px; padding:2px 6px; }
-"""
+def theme_colors(prs):
+    """母版主题的配色方案：{名字: RRGGBB}，bg1/tx1/bg2/tx2 映射到 lt1/dk1/lt2/dk2。"""
+    theme = prs.slide_master.part.part_related_by(RT.THEME)
+    scheme = etree.fromstring(theme.blob).find(".//" + qn("a:clrScheme"))
+    out = {}
+    for el in scheme:
+        c = el[0]
+        out[etree.QName(el).localname] = c.get("val") if c.tag == qn("a:srgbClr") else c.get("lastClr")
+    out.update(bg1=out["lt1"], tx1=out["dk1"], bg2=out["lt2"], tx2=out["dk2"])
+    return out
 
 
-def mini_layout(page):
-    """构图缩略图：按 31×14.3 的正文区比例画出各块的位置。"""
-    W, H, gap = 124.0, 57.2, 1.6
-    rows = []
-    bottom = 6.0 if page.get("bottombar") else 0
-    rh = (H - bottom - gap * (ROWS - 1)) / ROWS
-    for b in page["blocks"]:
-        cols = block_cols(page, b)
-        cw = (W - gap * (cols - 1)) / cols
-        col, row, w, h = b["grid"]
-        x, y = col * (cw + gap), row * (rh + gap)
-        bw, bh = w * cw + (w - 1) * gap, h * rh + (h - 1) * gap
-        cls = "fig" if b["kind"] in FIGURE_KINDS else "cell"
-        label = html.escape(b.get("header") or b["kind"])
-        rows.append(f'<rect class="{cls}" x="{x:.1f}" y="{y:.1f}" width="{bw:.1f}" height="{bh:.1f}" rx="1.5"/>'
-                    f'<text x="{x + 2:.1f}" y="{y + 6.5:.1f}">{label}</text>')
-    if bottom:
-        rows.append(f'<rect class="bar" x="0" y="{H - bottom + 1.5:.1f}" width="{W}" height="{bottom - 1.5:.1f}" rx="1.5"/>')
-    return f'<svg viewBox="0 0 {W} {H}" role="img" aria-label="构图">{"".join(rows)}</svg>'
+WINGDINGS = {"n": "■", "l": "●", "q": "❑", "u": "◆", "Ø": "➢", "ü": "✓", "§": "▪"}
 
 
-def block_items(b):
-    head = html.escape(b.get("header") or b["kind"])
-    body = b["content"] if isinstance(b["content"], str) else "；".join(b["content"])
-    return f"<li><b>{head}</b>：{html.escape(body)}</li>"
+def text_spec(shape, colors):
+    """文字框的位置（cm，从页面左上角量）和第一段文字的样式，网页初稿照此叠放文字。"""
+    tf = shape.text_frame
+    body = tf._txBody.find(qn("a:bodyPr"))
+    p = tf.paragraphs[0]._p
+    rpr = p.find(".//" + qn("a:rPr"))
+    if rpr is None:
+        raise ValueError(f"「{shape.name}」第一段没有文字样式，先在模板里给它写上占位词")
+    clr = rpr.find(qn("a:solidFill"))[0]
+    if len(clr):
+        raise ValueError(f"「{shape.name}」的文字颜色带亮度调整，网页初稿不支持，改成纯色")
+    ppr = p.find(qn("a:pPr"))
+    algn = ppr.get("algn") if ppr is not None else None
+    ins = {k: int(body.get(a, d)) / 360000 for k, a, d in
+           (("l", "lIns", 91440), ("r", "rIns", 91440), ("t", "tIns", 45720), ("b", "bIns", 45720))}
+    bullet = None
+    bu = ppr.find(qn("a:buChar")) if ppr is not None else None
+    if bu is not None:  # 华科模板的页面标题前有一个 Wingdings 方块，清空文字后它也没了，网页里照样画出来
+        font = ppr.find(qn("a:buFont"))
+        char = bu.get("char")
+        if font is not None and font.get("typeface") == "Wingdings":
+            char = WINGDINGS[char]
+        bullet = {"char": char, "indent": int(ppr.get("marL", "0")) / 360000}
+    return {"x": shape.left / 360000, "y": shape.top / 360000, "w": shape.width / 360000, "h": shape.height / 360000,
+            "pt": int(rpr.get("sz", "1800")) / 100, "bold": rpr.get("b") == "1",
+            "color": clr.get("val") if clr.tag == qn("a:srgbClr") else colors[clr.get("val")],
+            "align": {"ctr": "center", "r": "right"}.get(algn, "left"),
+            "anchor": {"ctr": "center", "b": "flex-end"}.get(body.get("anchor"), "flex-start"),
+            "wrap": body.get("wrap") != "none", "ins": ins, "bullet": bullet}
 
 
-def cmd_wall(args):
-    data = load(args.outline)
-    meta, hs = data["meta"], hints(data)
-    e = html.escape
-    info = " · ".join(e(str(meta[k])) for k in ("occasion", "audience") if meta.get(k))
-    if meta.get("minutes"):
-        info += f" · {meta['minutes']} 分钟"
-    out = [f'<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">'
-           f'<meta name="viewport" content="width=device-width,initial-scale=1">'
-           f'<title>{e(meta["title"])[:20]} 大纲</title><style>{WALL_CSS}</style></head><body><main>',
-           f'<h1>{e(meta["title"])}</h1><p class="meta">{e(meta["presenter"])} · {e(meta["date"])}'
-           f'{" · " + info if info else ""}</p>']
-    if meta.get("thesis"):
-        out.append(f'<p class="thesis"><b>要听众接受的结论：</b>{e(meta["thesis"])}</p>')
-    current = None
-    for n, part, page in walk(data):
-        if part is not current:
-            if current is not None:
-                out.append("</div>")
-            k = [p for p in data["parts"] if p.get("toc", True)]
-            num = f"{cn_num(k.index(part) + 1)}、" if part in k else ""
-            out.append(f'<h2>{num}{e(part["title"])}</h2><div class="wall">')
-            current = part
-        out.append(f'<article class="note"><div class="no">第 {n} 页</div>'
-                   f'<div class="title">{e(page["title"])}</div>{mini_layout(page)}')
-        if page.get("composition"):
-            out.append(f'<div class="comp">{e(page["composition"])}</div>')
-        out.append("<ul>" + "".join(block_items(b) for b in page["blocks"]) + "</ul>")
-        if page.get("notes"):
-            out.append(f'<div class="notes">口播：{e(page["notes"])}</div>')
-        out.extend(f'<div class="warn">{e(h)}</div>' for h in hs[n])
-        out.append("</article>")
-    out.append("</div></main></body></html>")
-    Path(args.out).write_text("".join(out), encoding="utf-8")
-    print("written", args.out)
+def cmd_chrome(args):
+    """把过渡页、内容页上要填字的形状清空、去掉页码，渲染成底图；记下这些形状的位置和文字样式。"""
+    deck = Deck(args.template)
+    colors = theme_colors(deck.prs)
+    spec = {"slide": [deck.prs.slide_width / 360000, deck.prs.slide_height / 360000],
+            "body": {"x": deck.template.x0 / 360000, "y": deck.template.y0 / 360000,
+                     "w": deck.template.w, "h": deck.template.h},
+            "pages": {}}
+    for key, src, names in (("divider", deck.divider_t, {"章节标题": "title"}),
+                            ("content", deck.content_t, {"页面标题": "title", "章节标签": "label"})):
+        s = deck._clone(src)
+        texts = {}
+        for sh in list(s.shapes):
+            if sh.name in names:
+                texts[names[sh.name]] = text_spec(sh, colors)
+                sh.text_frame.text = ""
+            elif sh.is_placeholder and sh.placeholder_format.type == PP_PLACEHOLDER.SLIDE_NUMBER:
+                texts["num"] = text_spec(sh, colors)
+                sh._element.getparent().remove(sh._element)
+        missing = set(names.values()) - set(texts)
+        if missing:
+            raise ValueError(f"模板「{args.template}」的{key}页缺少形状：{missing}")
+        spec["pages"][key] = {"bg": f"{key}.png", "texts": texts}
+    out = TEMPLATES / args.template / "web"
+    out.mkdir(exist_ok=True)
+    with tempfile.TemporaryDirectory() as tmp:
+        pptx = Path(tmp) / "chrome.pptx"
+        deck.save(pptx)
+        subprocess.run([sys.executable, "-X", "utf8", str(SCRIPTS / "render.py"), str(pptx), tmp, "--dpi", "150"],
+                       check=True)
+        for k, key in ((1, "divider"), (2, "content")):
+            (Path(tmp) / f"p-{k:02d}.png").replace(out / f"{key}.png")
+    (out / "web.json").write_text(json.dumps(spec, ensure_ascii=False, indent=2), encoding="utf-8")
+    print("written", out)
 
 
-# ---------------------------------------------------------------- draft
+# ---------------------------------------------------------------- 汇报网页
 
-def draw_block(c, page, b):
-    g = Grid(cols=block_cols(page, b), bottombar=bool(page.get("bottombar")))
-    box = g.box(*b["grid"])
-    items = [b["content"]] if isinstance(b["content"], str) else b["content"]
-    if b["kind"] in TEXT_KINDS:
-        if b["kind"] == "卡片" or b.get("header"):
-            body = c.card(box, header=b.get("header"), solid=False)
-            box = Box(body.l + 0.5, body.t - 0.3, body.w - 1.0, body.h - 0.6)
-        c.bullets(box, items)
-        return
-    if b.get("header"):
-        body = c.card(box, header=b["header"], solid=False)
-        box = Box(body.l + 0.3, body.t - 0.3, body.w - 0.6, body.h - 0.6)
-    shp = c.shape("占位", MSO_SHAPE.RECTANGLE, box, TONES["neutral"].tint, GRAY, 0.8)
-    shp.line.dash_style = MSO_LINE.DASH
-    fill_text(shp.text_frame, [P(R(f"【{b['kind']}】", color=GRAY, bold=True)), *items],
-              size=S_SMALL, color=GRAY, align="c", anchor="m")
+def data_uri(path):
+    return "data:image/png;base64," + base64.b64encode(Path(path).read_bytes()).decode()
 
 
-def cmd_draft(args):
+def site_slides(data, design):
+    """网页脚本用的数据：每页一项，按幻灯片顺序。design 为设计稿渲染图目录（p-NN.png），没有时为 None。"""
+    meta = data["meta"]
+    tp = toc_parts(data)
+    hs = hints(data)
+    paras = page_paras(data)
+
+    def shot(n):
+        f = design / f"p-{n:02d}.png" if design else None
+        return data_uri(f) if f and f.exists() else None
+
+    slides = [{"n": 1, "type": "cover", "title": meta["title"], "design": shot(1)},
+              {"n": 2, "type": "toc", "title": "目录", "design": shot(2),
+               "items": [f"{cn_num(k + 1)}、{p['title']}" for k, p in enumerate(tp)]}]
+    n = 2
+    for part in data["parts"]:
+        num = f"{cn_num(tp.index(part) + 1)}、" if part in tp else ""
+        if part in tp:
+            n += 1
+            slides.append({"n": n, "type": "divider", "title": f"{num}{part['title']}", "design": shot(n)})
+        for page in part["pages"]:
+            n += 1
+            ps = paras.get(page["id"], [])
+            slides.append({
+                "n": n, "type": "content", "id": page["id"], "part": part["title"], "partNo": num,
+                "title": page["title"], "point": page.get("point", ""), "notes": "\n".join(ps),
+                "bridge": first_sentence(ps[0]) if ps else "",
+                "research": page.get("research", []), "sources": page.get("sources", []),
+                "bar": page.get("bottombar"), "cols": page.get("cols", 12),
+                "variants": [{"label": lab, "html": src} for lab, src in variants(data, page)],
+                "design": shot(n), "hints": hs[n]})
+    return slides
+
+
+def cmd_site(args):
     data = load(args.outline)
     meta = data["meta"]
-    deck = Deck(meta.get("template", "hust"))
-    deck.cover(meta["title"], meta["presenter"], meta["date"])
-    deck.toc([p["title"] for p in data["parts"] if p.get("toc", True)])
-    for part in data["parts"]:
-        if part.get("toc", True):
-            deck.divider(part["title"])
-        for page in part["pages"]:
-            c = deck.content(part["title"], page["title"], notes=page.get("notes", ""))
-            for b in page["blocks"]:
-                draw_block(c, page, b)
-            if page.get("bottombar"):
-                c.bottombar(*page["bottombar"])
-    deck.save(args.out)
+    name = meta.get("template", "hust")
+    use_template(name)
+    web = TEMPLATES / name / "web"
+    if not (web / "web.json").exists():
+        raise ValueError(f"模板「{name}」还没有网页底图，先运行：outline.py chrome {name}")
+    chrome = json.loads((web / "web.json").read_text(encoding="utf-8"))
+    for p in chrome["pages"].values():
+        p["bg"] = data_uri(web / p["bg"])
+    design = Path(args.design) if args.design else None
+    if design and not design.is_dir():
+        raise ValueError(f"设计稿目录不存在：{design}")
+    script = [{"title": ch["title"], "paras": [{"page": pid, "text": t, "chars": chars(t)} for pid, t in ch["paras"]]}
+              for ch in data["script"]]
+    payload = {"meta": {k: meta.get(k) for k in ("title", "presenter", "date", "occasion", "audience", "minutes", "thesis")},
+               "chrome": chrome, "slides": site_slides(data, design), "script": script, "cpm": CHARS_PER_MIN,
+               "tones": {k: {"base": t.base, "tint": t.tint, "ink": t.ink} for k, t in TONES.items()
+                         if k in ("primary", "accent", "neutral", "error")}}
+    blob = json.dumps(payload, ensure_ascii=False).replace("</", "<\\/")
+    shell = (SCRIPTS / "site.html").read_text(encoding="utf-8")
+    page = shell.replace("__TITLE__", html.escape(meta["title"][:12] + " 汇报"), 1).replace("__DATA__", blob, 1)
+    Path(args.out).write_text(page, encoding="utf-8")
     print("written", args.out)
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
-    for name, fn, extra in (("check", cmd_check, False), ("wall", cmd_wall, True), ("draft", cmd_draft, True)):
-        p = sub.add_parser(name)
-        p.add_argument("outline")
-        if extra:
-            p.add_argument("out")
-        p.set_defaults(fn=fn)
+    p = sub.add_parser("check")
+    p.add_argument("outline")
+    p.set_defaults(fn=cmd_check)
+    p = sub.add_parser("site")
+    p.add_argument("outline")
+    p.add_argument("out")
+    p.add_argument("--design", help="设计稿渲染图目录（render.py 的输出，p-NN.png）")
+    p.set_defaults(fn=cmd_site)
+    p = sub.add_parser("chrome")
+    p.add_argument("template")
+    p.set_defaults(fn=cmd_chrome)
     args = ap.parse_args()
     args.fn(args)
 

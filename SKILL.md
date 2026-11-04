@@ -7,76 +7,89 @@ description: 用学术汇报模板（默认华中科技大学模板，templates/
 
 视觉基准是 `templates/<模板名>/template.pptx`（封面、目录、过渡页、内容页四种版式）。默认用 `hust`（华科模板），
 有哪些模板、怎么选、怎么加新模板见 `references/templates.md`。
-叙事基准是「结论句标题 + 证据」：页面标题写这一页要证明的结论，正文给出证据。
+叙事基准是「先讲稿、后切页」：先写一篇讲顺了的讲稿，再按段切页。每页标题写主题词，标题下的要点句写这一页要听众记住的一句话，正文给出证据，口播稿就是讲稿里这一页的几段。
 
 下文的 `<skill>` 指本 skill 的目录（加载时给出的 Base directory），写进命令和脚本时换成实际的绝对路径。
 
 | 文件 | 什么时候读或用 |
 |---|---|
-| `references/content_rules.md` | 写大纲前读：主线、结论句标题、证据、文字、答问。改已有 deck 时按它审一遍 |
+| `references/content_rules.md` | 写讲稿前读：主线、讲稿写法、标题和要点句、证据、文字、答问。改已有 deck 时按它审一遍 |
 | `references/figures.md` | 要放代码截图、复杂公式、网上的图、论文里的图时读 |
 | `references/layouts.md` | 排版前读：用户偏好和原因、怎么按内容设计一页、判断好坏、整份节奏、细节，几项并列页的例子和代码 |
-| `references/outline.md` | 写 `outline.json` 时读：字段、块类型、示例 |
+| `references/outline.md` | 写讲稿、`outline.json` 和网页初稿时读：格式、字段、初稿组件、和 `hust_deck` 的对照 |
 | `references/templates.md` | 用户指定了模板、或要新增模板时读 |
 | `templates/<模板名>/` | 模板：`template.pptx` 版式页 + `template.json` 主色、正文区等参数 |
-| `scripts/outline.py` | 大纲检查 / 便利贴墙 / 策划稿（线框 pptx） |
+| `scripts/outline.py` / `site.html` | 讲稿、大纲和初稿检查，生成汇报网页（讲稿 + 便签画布 + 翻页预览），`page_notes()` 给设计稿取口播稿 / 网页的外壳和初稿组件样式 |
 | `scripts/hust_deck.py` | 生成库（python-pptx） |
 | `scripts/template_check.py` | 新模板接入检查，列出版式页形状位置 |
 | `scripts/fetch_image.py` / `pdf_figure.py` / `snippet.py` | 网上取图 / 论文取图 / 代码和终端截图 |
 | `scripts/qa_check.py` / `render.py` / `sheet.py` | 程序质检 / 渲染成图目检 / 几种排法拼成一张对照图 |
-| `examples/example_deck.py` / `examples/microwave/` | 阶段汇报骨架 / 完整的课程汇报（`outline.json` 大纲 + 设计稿 `build_deck.py`；现象引入、时间线、引线标注、大序号步骤、公式拆解、对比表、原生示意图和图表），新做汇报时参考它的流程和写法，版式按自己的内容设计 |
+| `examples/example_deck.py` / `examples/microwave/` | 阶段汇报骨架 / 完整的课程汇报（`script.md` 讲稿、`outline.json`、`draft/` 网页初稿、设计稿 `build_deck.py`；现象引入、时间线、引线标注、大序号步骤、公式拆解、对比表、原生示意图和图表），新做汇报时参考它的流程和写法，版式按自己的内容设计 |
 | `examples/layouts/` | 以图为主、不套卡片的五种做法（并列多列、每行一项、图片表格、大图引线标注、一大几小），用 Commons 照片演示 |
 
-## 1. 工作流：需求调研 → 资料搜集 → 大纲 → 策划稿 → 设计稿
+## 1. 工作流：需求调研 → 讲稿 → 网页初稿 → 设计稿
 
-顺序不能反。**两个检查点**（便利贴墙、策划稿）都要用户确认后才往下走。取图、配色、命名页型都放到设计稿阶段：
-版式定了再做，不白做。一份汇报的内容和版式都记在一份 `outline.json` 里（格式见 `references/outline.md`），
-便利贴墙、策划稿都从它生成，设计稿的分块也照它写。
+**先写讲稿，再做 PPT**（用户明确要求过）：先把要讲的话写成一篇连贯的讲稿，讲顺了再切成一页页。
+逻辑在讲稿里就连好了，PPT 只是把讲稿里要给听众看的东西放上去；先切页再往里填内容，页和页会割裂。
+
+**三个检查点**：讲稿、网页初稿、设计稿，每份汇报都要用户确认后才往下走。用户看的是同一个汇报网页，三个视图：
+讲稿（每段标出属于第几页）、便签画布（每章一行，便签写要点句，连线上写过渡句）、翻页预览（搜索 / 初稿 / 设计稿）。
+网页只看不改，用户在对话里说改哪里，改完用同一个文件路径重新发布，链接不变。
+
+```
+<汇报目录>/
+├── script.md            讲稿：## 章节，单独一行 [页 id] 标出下面几段属于哪一页（格式见 references/outline.md）
+├── outline.json         每页的 id、主题词标题、要点句、资料要点和出处
+├── draft/<页 id>.html    网页初稿，每页一个 HTML 片段
+├── source/              用户材料和查到的网页原文，质检时用 --source 核对数字
+├── figures/             设计稿取来的图
+└── build_deck.py        设计稿生成脚本：标题和要点句读 outline.json，口播稿读讲稿
+```
 
 ```bash
 O="uv run --no-project --with python-pptx --with lxml python -X utf8 <skill>/scripts/outline.py"
-$O check outline.json                          # 校验格式，列出只读标题和提示
-$O wall  outline.json <scratchpad>/wall.html   # 便利贴墙
-$O draft outline.json <scratchpad>/draft.pptx  # 策划稿
+$O check outline.json                                        # 讲稿字数，每页「标题 ｜ 要点句 ｜ 过渡句」和提示
+$O site  outline.json <scratchpad>/site.html [--design <png 目录>]  # 汇报网页，用 Artifact 工具发布
 ```
+
+发布不了 Artifact 时用 SendUserFile 发 `site.html`。
 
 1. **需求调研**：先读用户给的材料（报告、LaTeX、代码、数据）。材料撑不起一份汇报时（只给了题目、课程报告、
    开题的研究现状），先用 WebSearch 查一轮背景再提问，问题才能具体到这个题目（「重点讲产生机制还是工程应用？」）。
+   **一次只问一个问题**（用户明确要求过），根据回答再决定下一个问什么；能从材料里看出来的不问。
    要弄清：汇报类型、时长、听众（导师组会 / 答辩委员 / 课程老师）、这次要听众接受的那一个结论、上次讲到哪里。
-   能从材料里看出来的不问；看不出来的一次问清，一轮不超过 3 个问题。结果写进 `outline.json` 的 `meta`。
-2. **资料搜集**：页面上的每个数字都要能在材料里找到出处。以用户材料为准，网上的资料只补背景；
-   查到的网页把用到的段落连同链接存进汇报目录的 `source/`，和用户材料一起用 `qa_check.py --source` 核对。
-   大纲写好后按每页的结论句标题查漏：哪一页的证据在材料里找不到，就为它补查。
-   由材料参数算出的估算值（如 λ = c/f）写进 `source/estimates.md`，写明推导。
-3. **大纲（便利贴墙，检查点 1）**：按 `references/content_rules.md` 写 `outline.json`——整份一个核心结论（`meta.thesis`），
-   章节以上统下，每页一个结论句标题、它的证据和口播要点。跑 `check` 后生成便利贴墙，用 Artifact 工具发布 `wall.html`
-   给用户审：一页一张便利贴，按章分组，带构图缩略图和提示（标题一行放不下、构图和上一页相同、没写口播稿）。
-   用户在对话里说删哪张、调哪张、改哪个标题，改 JSON 后重新生成，用同一个文件路径重新发布（链接不变）。发布不了时用 SendUserFile 发文件。
-   用户确认前，先自己过这两项：
-   - **只读标题测试**：`check` 列出的标题按顺序读，应能连成「问题 → 做法 → 证据 → 结论 → 下一步」。
-     读不通就改结构，不要靠排版补救。
-   - **提纲检查**（用户明确要求过）：页面显得单薄，多半是提纲切得不对：
+   结果写进 `outline.json` 的 `meta`。
+2. **讲稿（检查点 1）**：按 `references/content_rules.md` 第 2 节写 `script.md`：像要上台念的口语稿，
+   开头提出问题，每章第一段回扣它，结尾回答它；段与段之间用一句话接上。字数按每分钟约 200 字估算时长，
+   **只作参考，讲得顺最要紧**（用户明确说过）。讲稿里的每个数字都要能在材料里找到；材料里没有的，到下一步查到了再写。
+   发网页给用户读讲稿视图。用户确认前，先自己过这两项：
+   - **讲稿读一遍**：从头念到尾，有没有跳跃、前后接不上、同一件事讲了两遍的地方。读不通就改讲稿，不要靠排版补救。
+   - **提纲检查**（用户明确要求过）：内容显得单薄，多半是结构不对：
      - 开头有没有一个让听众关心的问题（现象、矛盾、需求），后面每章回答它的一部分；
-     - 同一个对象、同一个机制是否被拆到了几页（如一页列部件、另一页讲它怎么工作），拆了就合并；
-     - 定性和定量讲的是同一件事时放在同一页（示意图 + 公式），不要各占一页、两页都薄；
+     - 同一个对象、同一个机制是否被拆到了几处（如一处列部件、另一处讲它怎么工作），拆了就合并；
+     - 定性和定量讲的是同一件事时放在一起讲（示意图 + 公式）；
      - 每条内容是否放在了它所属的章节（屏蔽和驻波都是「金属腔反射微波」，就放一起）。
-     合并后每页的证据要带信息量：机制图、对比表、数据图、计算过程、实例。往卡片里多塞几条要点不算充实。
-4. **策划稿（检查点 2）**：给每页写 `blocks`，即每块的网格位置、类型、要点（构图怎么想见 `references/layouts.md` 第 2 节，
-   相邻几页不要同一种排法）。`draft` 在真模板上生成线框稿：标题和文字是真的，图片、图表、表格、公式的位置
-   用虚线框写明放什么。用 `render.py` 渲染后 `sheet.py --cols 3` 拼成总览图给用户看：主角够不够大、
-   整份有没有轻重变化、文字装不装得下。策划稿上 `qa_check.py` 只看 ❌ 和溢出——块里写的是要点，
-   「卡片空白」的 ⚠️ 到设计稿按 content_rules.md 第 4 节补足。
-   内容页不超过 8 页时可以跳过线框稿，检查点 1 和 2 合并：便利贴上已有构图缩略图。
-   - **排法没把握的页，先出几种方案给用户挑**（用户明确要求过）：研究现状、方法、结果这类关键页有几种排法可选，
-     或用户对某页不满意时，不要改一版问一次（用户评价「你这么着急做干嘛」）。在草稿目录写一个方案脚本，
-     同一页的内容按 3–6 种排法各生成一页（口播稿开头写「方案 X」），其中至少一种按这页的内容新设计、不照搬
-     `references/layouts.md` 里的例子。渲染后拼成对照图，自己逐张看过再给用户：
-     `uv run --no-project --with pillow python -X utf8 <skill>/scripts/sheet.py 对照.png p-01.png p-02.png … --labels "A …,B …,…"`。
-     能发网页时（如 Artifact）做成网页，每种方案配一句排法说明和参考出处。用户选定后改进 `outline.json`。
+3. **资料搜集**：以用户材料为准，讲稿里某段的证据在材料里找不到时才上网补（用户选定的做法）。
+   每页用到的要点写进 `outline.json` 的 `research`（一条一句，括号里写出处），出处写进 `sources`；查到的网页把用到的段落
+   连同链接存进 `source/`。由材料参数算出的估算值（如 λ = c/f）写进 `source/estimates.md`，写明推导。
+4. **切页和网页初稿（检查点 2）**：用户确认讲稿后按讲稿切页，一段（或连着的一两段）一页，一页只讲一件事：
+   - 在讲稿里每页的第一段前加一行 `[页 id]`；这几段就是这一页的口播稿，第一句就是过渡句，不另写。
+   - `outline.json` 里给每页写主题词标题（16 字以内）和要点句（这几段的中心句，20 字以内），要点句显示在标题下的浅底条里。
+   - 每页写一个 `draft/<id>.html`：段落里提到的照片、公式、数字就是这一页的证据。版式沿用设计稿的做法（第 2 节、
+     `references/layouts.md`）：照片当主角、引线标注、时间线、大序号步骤、公式拆解这些命名页型照搬，不用一格一格的块填满网格；
+     照片、截图、论文图、数据图用虚线占位框写明放什么、从哪来。网页会把放不下的块标成红框，改到没有红框再发。
+   - **以照片为主的页、几项并列且每项都有图的页，写两个方案**（用户明确要求过「两个都试试」）：
+     一个用卡片，一个不用卡片（`references/layouts.md` 第 6 节的排法），用户在预览里切换着挑。
+   - **其他排法没把握的页，也先出几种方案**（用户明确要求过）：研究现状、方法、结果这类关键页，或用户对某页不满意时，
+     不要改一版问一次（用户评价「你这么着急做干嘛」）。同一个片段里写 3–6 个 `<section class="variant">`，
+     其中至少一种按这页的内容新设计、不照搬 `references/layouts.md` 里的例子。
      要找别人的排法作参考时，用公开的真实报告（博士答辩、课程讲义、研究所介绍），不用模板网站的样张。
-5. **设计稿**：按确认的策划稿写生成脚本（第 4 节），块的位置沿用 `outline.json` 的 `grid`，在此基础上取图、配色、
-   用命名页型、加引线和标注，按 content_rules.md 把内容写足，质检（第 5 节）后交付。
-   之后用户要改页序或标题时，先改 `outline.json` 再改脚本，两边保持一致。
+   - 用户在画布上从左往右读过渡句和要点句，确认前后接得上；`check` 也会列出这一串。
+5. **设计稿（检查点 3）**：按选定的初稿写生成脚本（第 4 节）。块的位置照搬 `data-grid`（`Grid(lead=True).box()` 用同样的四个数），
+   组件换成 `hust_deck` 的对应方法（对照表在 `references/outline.md`）；占位框换成真实素材（取法见 `references/figures.md`，
+   图由 Claude 挑、自己检查后直接放，用户明确说过不用先给他挑），再加强调色、重点边框、引线标注，按第 5 节质检。
+   `render.py` 渲染后用 `site --design <png 目录>` 把渲染图放进网页的「设计稿」，重新发布，交付 `.pptx`。
+   之后用户要改内容或页序，先改讲稿和 `outline.json`，再改初稿和脚本，保持一致。
 
 **按时长定结构**：
 
@@ -144,11 +157,11 @@ $O draft outline.json <scratchpad>/draft.pptx  # 策划稿
 
 ## 3. 单页法则
 
-标题、证据、字数、口播稿的通用规范在 `references/content_rules.md` 第 2–4、6 节。这里是和工具、用户约定相关的部分：
+讲稿、标题、证据、字数、口播稿的通用规范在 `references/content_rules.md` 第 2–5、7 节。这里是和工具、用户约定相关的部分：
 
 - **章节标签只做导航**：写章节名。
 - **页底总结条（`bottombar`）可选**：用于一句设计原则或补充说明，不要把标题再复述一遍。
-- **每页写口播稿**：`deck.content(..., notes=...)`。
+- **每页的口播稿取自讲稿**：`deck.content(..., notes=NOTES[页 id], point=要点句)`，`NOTES = page_notes("outline.json")`，不在脚本里另写。
 - **重做别人的 PPT 先导出原稿全部图**（用户明确要求过）：图片对象、形状和表格单元格的图片填充、SVG 里嵌的位图都要导出，
   逐页放回去；原稿的图明显比新稿多就是做砍了。
 - **能用真实照片就用照片，不用方框代替实物**（用户明确要求过：「明明可以用实际的图片，却偏偏用框框来表示」）：
@@ -162,7 +175,7 @@ $O draft outline.json <scratchpad>/draft.pptx  # 策划稿
   照片要能证明标题或配合讲解（对着编号讲部件），只起装饰作用的照片不放。
 - **图下写图注，页面上不写出处**（用户明确要求过：组会、课程汇报这类场合）：网图、论文里的图和数据都不在页上标引文。
   开题、答辩的研究现状页例外：用户要求文献号（上标或「[n] 对象」标签）对应文末参考文献，标签下用 13pt 灰字写「作者 et al., 年份」。
-  图注写图里是什么、图上标号的含义，一行为宜，不写结论（结论在标题）。只写图上看得出来或材料里有的内容，
+  图注写图里是什么、图上标号的含义，一行为宜，不写结论（结论在要点句里）。只写图上看得出来或材料里有的内容，
   不凭常识补充（照片看不出「四壁是金属」就不写）。网图的来源和许可只记在图片旁的 `.json` 里。
 
 ## 4. 生成脚本
@@ -173,12 +186,15 @@ $O draft outline.json <scratchpad>/draft.pptx  # 策划稿
 import sys
 sys.path.insert(0, r"<skill>/scripts")
 from hust_deck import *
+from outline import page_notes
 
+NOTES = page_notes("outline.json")       # {页 id: 讲稿里这一页的几段}，当口播稿
 deck = Deck("hust")                      # 模板名，见 references/templates.md
 deck.cover(标题, 汇报人, 日期)          # 标题、汇报人过长时自动缩小字号
 deck.toc([章节...])
 deck.divider(章节)                       # 每章前一张，编号取目录顺序
-c = deck.content(章节, 结论句标题, notes=口播稿)
+c = deck.content(章节, 主题词标题, notes=NOTES[页 id], point=要点句)   # 要点句画在标题下的浅底条里
+g = Grid(lead=True)                      # 有要点句的页，网格从要点句条下面开始
 ...                                      # 用 c 画正文
 deck.save(输出路径)
 ```
@@ -187,16 +203,16 @@ deck.save(输出路径)
 
 **正文画布**：原点在左下角、y 向上，单位 cm，宽高由模板定（华科模板宽 31cm、高 14.3cm，下文坐标都按它举例）。
 `Box(l, t, w, h)` 的 `t` 是上边。主色随模板变，脚本里要用主色时写 `TONES["primary"].base`，不写色值。
-**排版用 `Grid` 网格对齐**：`g = Grid()` 把正文区切成 12 列 × 6 行，格间距统一 0.6cm；
+**排版用 `Grid` 网格对齐**：`g = Grid(lead=True)` 把要点句条以下的正文区切成 12 列 × 6 行，格间距统一 0.6cm；
 `g.box(列, 行, 占几列, 占几行)` 返回一个块（列、行从 0 起，行从上往下数），边都落在网格线上。
-带总结条时用 `Grid(bottombar=True)`；五列阶段卡用 `Grid(cols=5)`。
+带总结条时加 `bottombar=True`；五列阶段卡用 `Grid(cols=5, lead=True)`。
 几张图拼在一块区域里时用 `gallery()` / `strip()` 按宽高比算尺寸（`aspect(图)` 取宽高比），区域本身仍落在网格上；
-只有 layouts.md 第 6 节那类几项并列的图片页，才从正文区 `B = Grid().box(0, 0, 12, 6)` 起按图的形状排。
+只有 layouts.md 第 6 节那类几项并列的图片页，才从正文区 `B = Grid(lead=True).box(0, 0, 12, 6)` 起按图的形状排。
 常见构图和例子见 `references/layouts.md` 第 5、6 节。
 
 | 方法 | 用途 |
 |---|---|
-| `card(box, header=None, tone, solid=True, highlight=False)` | 白底卡片；header 给出时画标题条并返回其下的正文区 Box |
+| `card(box, header=None, tone, solid=True, highlight=False, sub=None, shadow=False)` | 白底细边框卡片；header 给出时画标题条并返回其下的正文区 Box，sub 是标题条下一行灰字副标题。并排的同级卡片不加阴影（用户明确要求过），`shadow=True` 只给压在照片上的那一块 |
 | `tint(box, tone)` | 浅色底块 |
 | `heading(card, 标题, n=None)` / `title(anchor, x, y, s)` | 无标题条卡片的左上角标题（给 n 时带序号）/ 18pt 粗体标题 |
 | `text(box, paras, size, color, align, anchor, line)` | 文本框；paras 可为 str、`P(...)`、`R(...)` 或列表 |
@@ -217,6 +233,7 @@ deck.save(输出路径)
 | `aspect(图)` | 图片宽高比，按图的形状算版面时用 |
 | `formula(png, x, y)` / `snippet(png, anchor, x, y)` | 按 600dpi 原尺寸放公式图 / 按原尺寸放代码或终端图（返回的 Box 带 `line_y(k)`） |
 | `bottombar(标签, 一句话)` | 页底总结条 |
+| `kpis(box, [(数值, 说明)], big=False)` / `chips(x, y, [词])` / `timeline(box, [(名称, 说明)])` | 关键数字行（竖线分隔）/ 一排关键词胶囊 / 迷你时间线；和网页初稿的 `.kpis` `.chips` `.tl` 对应 |
 
 短公式用 `P(...)` + `var()` 写成可编辑文字；代码截图、复杂公式、网上的图、论文里的图怎么取、怎么查，见 `references/figures.md`。
 
@@ -227,7 +244,7 @@ uv run --no-project --with python-pptx python -X utf8 <skill>/scripts/qa_check.p
 uv run --no-project python -X utf8 <skill>/scripts/render.py deck.pptx <scratchpad>/png [--pages 4,18] [--engine powerpoint]
 ```
 
-- `qa_check.py`：❌ 必须修完；⚠️ 逐条修掉，或在交付说明里写明为何保留。最后列出的标题序列就是只读标题测试。
+- `qa_check.py`：❌ 必须修完；⚠️ 逐条修掉，或在交付说明里写明为何保留。最后列出的「标题 ｜ 要点句 ｜ 过渡句」按顺序读一遍，检查论证和衔接。
 - 再用 pptx skill 的 `scripts/office/validate.py` 做格式校验。它在 `~/.claude/skills/synced/<id>/pptx/` 下，
   `<id>` 随同步变化，用通配符找（Bash）：
   `uv run --no-project --with lxml --with defusedxml python -X utf8 $(ls ~/.claude/skills/synced/*/pptx/scripts/office/validate.py | head -1) deck.pptx`
@@ -241,7 +258,7 @@ uv run --no-project python -X utf8 <skill>/scripts/render.py deck.pptx <scratchp
 |---|---|
 | 1 | 文字没有溢出、没有压到别的文字、线条或图片（`qa_check.py` 会报文字压图），词语没有被换行拆开？ |
 | 2 | 主角一眼可见，图够大、看得清？整页没有大块空白或挤在一角，卡片里没有半张空着？（`qa_check.py` 按估算查卡片空白，以看图为准） |
-| 3 | 标题是结论句，且一行放下？同一件事没有在页上讲两遍？ |
+| 3 | 标题是主题词、要点句一行放下？同一件事没有在页上讲两遍？ |
 | 4 | 箭头方向、连线端点正确，说明文字没有压在节点上？ |
 | 5 | 公式变量斜体、下标正确？ |
 | 6 | 页面有成块的颜色而不是全灰（layouts.md 第 6 节的并列图片页看主色标签和箭头）？颜色含义和全篇一致，类型色有图例，红色只表示错误？ |
@@ -259,4 +276,4 @@ uv run --no-project python -X utf8 <skill>/scripts/render.py deck.pptx <scratchp
   PowerPoint 都会拒绝打开整个文件，`qa_check.py` 会报 ❌。换模板时先删掉 `p:custDataLst` 和 tags 部件。
 - **过渡页编号取自目录顺序**：先调用 `toc()`，`divider(章节名)` 的章节名必须在目录里。
 - **封面汇报人最多约 8 个汉字**：`cover()` 会去掉字间距、缩到最小 14pt，还放不下就报错，改写组名或第一作者。
-- 交付时说明哪些内容需要作者本人复核（数字、结论句措辞、待补的图）。未经要求不写额外的报告或说明文件。
+- 交付时说明哪些内容需要作者本人复核（数字、要点句措辞、待补的图）。未经要求不写额外的报告或说明文件。
