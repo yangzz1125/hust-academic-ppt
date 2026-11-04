@@ -70,7 +70,8 @@ deck.save("deck.pptx")
 SKILL.md                 skill 入口：流程、视觉规格、API、质检
 references/              内容规范、版式（以图为主、构图、并列页排法）、取图规范、模板说明
 templates/<模板名>/      template.pptx（4 页版式）+ template.json（主色、正文区等参数）
-scripts/                 hust_deck.py 生成库、qa_check.py 质检、render.py 渲染、取图和截图工具、template_check.py
+scripts/                 hust_deck.py 生成库、outline.py 讲稿检查和汇报网页（site.html）、qa_check.py 质检、render.py 渲染、
+                         取图和截图工具、template_check.py
 examples/                阶段汇报骨架、完整的微波炉课程汇报、以图为主的几种排法示例
 ```
 
