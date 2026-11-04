@@ -6,7 +6,8 @@
 ![示例：微波炉课程汇报](docs/preview.png)
 
 - **正文全部可编辑**：卡片、流程、节点图、表格、图表都是 PowerPoint 原生形状，图表数据可以在 PowerPoint 里改，不用整页图片。
-- **先定内容再排版**：材料 → 叙事 → 页计划 → 生成脚本 → 质检。每页标题写结论句，正文给证据，页面上的数字要能在材料里找到出处。
+- **先定内容再排版**：需求调研 → 资料搜集 → 大纲（便利贴墙）→ 策划稿（线框稿）→ 设计稿，大纲和策划稿都由用户确认后再往下做。
+  每页标题写结论句，正文给证据，页面上的数字要能在材料里找到出处。
 - **统一的视觉规格**：颜色按含义使用（主色、强调、次要、错误、六类知识点类型色），字号三档，用 12 × 6 网格排版；
   在模板基础上每页先定主角，有图时让图够大，`references/layouts.md` 给出判断标准和例子。
 - **程序质检加渲染目检**：`qa_check.py` 检查文字溢出、文字压图、配色、近似错位、构图重复、图片分辨率、数字出处、AI 套话；
@@ -38,7 +39,8 @@ git clone https://github.com/yangzz1125/hust-academic-ppt.git ~/.claude/skills/h
 
 > 用华科模板做一份 15 分钟的组会进展汇报，材料在 `reports/week6/`。
 
-Claude 会读材料、给出页计划，确认后写生成脚本、跑质检、逐页渲染检查。生成脚本大致是：
+Claude 会读材料（不够时上网补背景），问清场合后写 `outline.json` 大纲，发一张便利贴墙网页给你审；
+确认后出线框策划稿定版式，再写生成脚本、取图、跑质检、逐页渲染检查。生成脚本大致是：
 
 ```python
 import sys
@@ -56,7 +58,7 @@ c.web_figure("figures/magnetron.jpg", g.box(0, 0, 5, 6), "1 阴极 2 阳极 3 �
 deck.save("deck.pptx")
 ```
 
-完整示例见 `examples/microwave/build_deck.py`（上图就是它生成的），规范见 `SKILL.md` 和 `references/`。
+完整示例见 `examples/microwave/`：`outline.json` 是大纲和策划稿，`build_deck.py` 是设计稿（上图就是它生成的），规范见 `SKILL.md` 和 `references/`。
 
 ## 目录
 
