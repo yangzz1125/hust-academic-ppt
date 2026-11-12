@@ -64,6 +64,7 @@
 | 页 | `sources` | | 出处：`source/` 下的文件或网址 |
 | 页 | `cols` | | 这一页网格的列数，默认 12；五步并列用 5，三步用 3 |
 | 页 | `bottombar` | | 页底总结条 `["标签", "一句话"]`；有它时网格下边上移，和 `Grid(bottombar=True)` 一致 |
+| 页 | `refs` | | 页脚参考文献（答辩、开题讲到别人工作的页）：GB/T 7714 完整条目的列表，带「[n]」；网页和设计稿都画在页底，不能和 `bottombar` 同页 |
 
 页码按 封面 1、目录 2，每个进目录的章节前一张过渡页 数下去，和设计稿 pptx、讲稿视图、便签上的「#n」一致，
 用户说「第 7 页」时几处对得上。
@@ -75,8 +76,27 @@
 
 ```html
 <div class="tint tight" data-grid="0,0,3,2"><h4><span class="num">1</span>阴极</h4><p>加热后发射电子，电子从这里出发</p></div>
-<div class="ph" data-grid="3,0,6,6" data-kind="照片">拆开的家用磁控管，图上自带 1–6 编号；两侧说明块用引线指到编号</div>
+<figure class="fig" data-grid="3,0,6,6"><img src="../figures/magnetron.jpg"><figcaption>1 阴极 2 阳极 3 永磁体 4 谐振腔</figcaption></figure>
+<div class="ph" data-grid="9,0,3,6" data-kind="论文图">Witman 2019 图 1：射流装置，还没裁</div>
 ```
+
+多面板页（`layouts.md` 第 7 节）的写法，一个面板里套两张方法卡片：
+
+```html
+<div class="panel" data-grid="4,0,8,6"><span class="ptab">工艺优化：贝叶斯优化</span>
+  <div class="cols" style="flex:1;min-height:0">
+    <div class="card"><div class="hd soft">虚拟刻蚀 [7]</div><div class="bd"><div class="figblock">
+      <div class="imgs"><div><img src="../figures/kanarik_fig1_sim.png"><img src="../figures/kanarik_fig2.png"></div>
+                        <div><img src="../figures/kanarik_fig3.png"></div></div>
+      <div class="cap">刻蚀模拟器 · 工程师进度 · 人机配合的成本</div>
+      <div class="ends"><p><b>调的参数：</b>11 个工艺参数</p><p class="concl">人机配合，达标成本约降一半</p></div>
+    </div></div></div>
+    <div class="card">…第二张卡片同样写…</div>
+  </div></div>
+```
+
+- **图先放真图**：`<img src>` 写相对 `draft/` 的路径（`../figures/x.png`）或相对汇报目录的路径，`site` 会缩到 900 像素宽后嵌进网页；
+  图片不存在时报错。还没取到的图才用 `.ph` 虚线占位框写明放什么、从哪来。
 
 - `data-grid="列,行,占几列,占几行"`：和 `Grid(lead=True).box(列, 行, 占几列, 占几行)` 完全相同，行从上往下数，共 6 行；
   写了要点句的页，网格从要点句条下面开始。一页上半五列、下半十二列时，块上加 `data-cols="12"` 改这一块的列数。
@@ -103,7 +123,13 @@
 | `.tl` | 时间线：横线、圆点、年份、名称和说明 | `timeline(box, [(名称, 说明)])`，或按 layouts.md 第 7 节画大时间线 |
 | `.vs` / `.cols` | 两三块并排对比 / 等分几栏 | 几个 `tint()` 并排 |
 | `table.tbl` | 无网格表格，表头下一条主色线 | `table()` |
-| `.ph` + `data-kind` | 虚线占位框：照片、截图、论文图、原生图表、原生示意图、公式图 | `web_figure()` / `figure()` / `gallery()` / `chart()` / 原生形状 / `formula()` / `snippet()` |
+| `figure.fig` + `img` + `figcaption` / 块里直接一个 `img` | 真图，等比缩进块里；图注 13pt 灰字 | `figure(path, box, caption=...)` / `web_figure()` / 几张图用 `gallery()`、`strip()` |
+| `.panel` + `.ptab`（`.panel.side` 竖排标签，内容包在 `.pbody` 里） | 虚线分组框 + 实色标签：多面板页 | `panel(box, 标签, side=...)` |
+| `table.ftbl`（`th` 表头和行名，`td` 里放 `img` 或数值） | 图片表格 | `figtable(box, 表头, 行)` |
+| `.concl` | 面板里一句强调色粗体结论 | `R(..., color=TONES["accent"].ink, bold=True)` |
+| `.fine` | 12pt 注解：贴着图写的参数、数值、图注 | `size=S_NOTE` |
+| `.figblock` > `.imgs`（每个子 `div` 一行图）+ `.cap` + `.ends`（几个 `p`，`b` 是对比项名，`.concl` 是结果） | 一组文献图 + 图注 + 底部对齐的几行 | `figblock(box, rows, 图注, lines)` |
+| `.ph` + `data-kind` | 虚线占位框：还没取到的照片、截图、论文图，或原生图表、原生示意图、公式图 | `web_figure()` / `figure()` / `gallery()` / `chart()` / 原生形状 / `formula()` / `snippet()` |
 | `.em` | 强调色粗体的关键结论 | `R(..., color=TONES["accent"].ink, bold=True)` |
 
 封面和目录在网页里只画示意，设计稿用模板的封面页和目录页。

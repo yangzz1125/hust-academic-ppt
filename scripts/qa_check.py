@@ -1,7 +1,7 @@
 """学术汇报 PPT 的程序化质检。
 
 用法：
-    python qa_check.py <deck.pptx> [--source 材料1.md 材料2.tex ...] [--template 模板名]
+    python qa_check.py <deck.pptx> [--source 材料1.md 材料2.tex ...] [--figures 图片目录] [--template 模板名]
 
 模板默认取 Deck.save 记在文件属性（类别）里的模板名；正文区位置、主色、占位词、模板自带的装饰形状都从这套模板读。
 
@@ -9,9 +9,11 @@
     ❌ 同一页形状 ID 重复、多个形状共用同一个标签部件（PowerPoint 会拒绝打开整个文件）
     ❌ 形状超出页面
     ❌ 模板占位词残留（汇报标题、章节名、页面结论句……）
-    ❌ 字号小于 10.5pt
+    ❌ 字号小于 10.5pt（页脚参考文献 refs() 放行到 8pt）
     ⚠️ 文字估算宽度或行数超出文本框（按 tw 估算，中文按 1em；表格单元格不估算，以渲染图为准）
-    ⚠️ 正文里有小于 13pt 的文字、正文字数超过 280
+    ⚠️ 正文里有小于 12pt 的文字（S_NOTE，图注和参数注解的下限）、正文字数超过 280（页脚参考文献不计）
+    ⚠️ 内容页没有图片也没有图表，或图和图表只占正文区不到两成
+    ⚠️ --figures 目录里取来了却没放进 PPT 的图
     ⚠️ 卡片内容不充实：有大块竖向空白、只有文字的卡片里文字太少、没有图表的卡片每 cm² 字数太少
     ⚠️ 两个带文字的形状互相重叠；正文文字压在图片上（按估算的文字行高，不按文本框外框）
     ⚠️ 正文没有铺满正文区：内容上沿离正文区顶端超过 3cm，或下沿离底端超过 3.5cm（只看外框，卡片内部的空白以渲染图为准）
@@ -19,7 +21,7 @@
     ⚠️ 正文图片分辨率低于 150dpi（放映时发虚）、网图（web_figure）没有图注
     ⚠️ 页面标题超过 16 字（标题写主题词，结论写进要点句）；页面标题、章节标签会折成两行
     ⚠️ 标题、正文、口播稿里有 AI 套话（值得注意的是、综上所述、不是……而是……等）
-    ⚠️ 近似错位：两个主要块（卡片、底块、图片、表格、图表）的同一条边相差 0.02–0.25cm，要么对齐要么拉开
+    ⚠️ 近似错位：两个主要块（卡片、底块、图片、表格、图表）的同一条边相差 0.05–0.25cm，要么对齐要么拉开
        （对边已对齐的不算，如上沿对齐、高度不同的一排图）
     ⚠️ 同一构图（主要块的位置和尺寸）出现在 5 页及以上，版式节奏单调
     ⚠️ 整份版式单一：七成以上的内容页（且不少于 5 页）都是卡片铺满正文区（卡片面积占正文区六成以上）
@@ -29,6 +31,7 @@
 最后按顺序列出每页的标题、要点句和过渡句（口播稿第一句），供论证和衔接检查。有 ❌ 时退出码为 1。
 """
 import argparse
+import hashlib
 import re
 import sys
 from pathlib import Path
@@ -48,7 +51,7 @@ CM = 360000
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from hust_deck import GRAY, INK, LINE, S_MARK, TEXT, TONES, TYPE_NAMES, WHITE, templates, tw, use_template  # noqa: E402
+from hust_deck import GRAY, INK, LINE, S_MARK, S_NOTE, TEXT, TONES, TYPE_NAMES, WHITE, templates, tw, use_template  # noqa: E402
 
 TITLE_EM = 16  # 页面标题写主题词，16 个汉字以内（content_rules.md 第 3 节）
 
@@ -70,8 +73,13 @@ MAX_CHARS = 280
 # 正文图片按放置尺寸计算的最低分辨率
 MIN_DPI = 150
 # 主要块：参与近似错位和构图重复检查的形状（按 hust_deck 的命名前缀）
-BLOCKS = ("卡片", "底色", "图片", "网图", "表格", "图表", "截图")
-NEAR_MISS = (0.02, 0.25)  # cm
+BLOCKS = ("卡片", "底色", "图片", "网图", "表格", "图表", "截图", "分组框")
+# 图片和图表占正文区的比例低于这个值时提示：同学那份被用户认可的会议 PPT 每页在 25–44%，
+# 被评为「太烂」的答辩稿多数页是 0（只有文字和自己画的方框）
+FIG_MIN_SHARE = 0.2
+REF_MIN_PT = 8  # 页脚参考文献（形状名「参考文献」）允许的最小字号
+IMG_EXT = (".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tif", ".tiff")
+NEAR_MISS = (0.05, 0.25)  # cm；0.05 以下看不出来（gallery() 按宽高比算尺寸，同组图会有 0.02–0.03 的取整差）
 # 构图签名只看面积不小于这个值（cm²）的块；同一签名出现这么多页时提示
 SIG_MIN_AREA, SIG_MAX_REPEAT = 20, 5
 # 卡片面积占正文区这个比例以上算「卡片铺满」；这样的页占内容页 CARDED[1] 以上、且不少于 CARDED[2] 页时提示版式单一。
@@ -289,6 +297,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("deck")
     ap.add_argument("--source", nargs="*", default=[], help="核对数字用的原始材料（md / tex / txt / json）")
+    ap.add_argument("--figures", help="汇报的图片目录（如 figures/），列出取来了却没放进 PPT 的图")
     ap.add_argument("--template", help="模板名；默认取 deck 文件属性里记录的模板")
     args = ap.parse_args()
 
@@ -365,19 +374,21 @@ def main():
             for w in stale_words:
                 if w in txt:
                     report("❌", i, f"「{sh.name}」残留模板占位词「{w}」")
+            is_ref = sh.name.startswith("参考文献")  # refs() 画的页脚文献：字号放行到 REF_MIN_PT，不计字数、不核对数字
             for size, run in sizes_of(sh):
-                if size < 10.5:
+                if size < (REF_MIN_PT if is_ref else 10.5):
                     report("❌", i, f"「{sh.name}」字号 {size:g}pt 太小：{run[:20]}")
             msg = overflow(sh) if sh.has_text_frame else None
             if msg:
                 report("⚠️", i, f"「{sh.name}」可能溢出（{msg}）：{txt[:24]}")
             if is_content and sh.name not in HEADER and not sh.name.startswith("灯片编号"):
-                body_chars += len(re.sub(r"\s", "", txt))
-                body_sizes += [s for s, _ in sizes_of(sh)]
+                if not is_ref:
+                    body_chars += len(re.sub(r"\s", "", txt))
+                    body_sizes += [s for s, _ in sizes_of(sh)]
                 texts.append(txt)
                 if sh.has_text_frame:
                     texted.append(sh)
-            if nums is not None and i > 1 and not sh.name.startswith("灯片编号"):
+            if nums is not None and i > 1 and not is_ref and not sh.name.startswith("灯片编号"):
                 for n in re.findall(r"\d+(?:\.\d+)?", txt):
                     if len(n.replace(".", "")) >= 2 and not re.fullmatch(r"0\d", n) and n not in nums:
                         report("⚠️", i, f"数字 {n} 在材料中找不到（「{sh.name}」：{txt[:24]}）")
@@ -403,9 +414,9 @@ def main():
                     width = tw(sh.text_frame.text.strip(), run.font.size.pt if run.font.size else 24)
                     if width > sh.width / CM - 0.5:
                         report("⚠️", i, f"「{sh.name}」约 {width:.1f}cm，框宽 {sh.width / CM - 0.5:.1f}cm，会折成两行")
-            small = sorted({s for s in body_sizes if s < 13})
+            small = sorted({s for s in body_sizes if s < S_NOTE})
             if small:
-                report("⚠️", i, f"有小于 13pt 的文字（{small}），正文 16、标签和图注 13")
+                report("⚠️", i, f"有小于 {S_NOTE}pt 的文字（{small}），正文 16、标签 13、图注和参数注解最小 {S_NOTE}")
             stray = sorted(colors - palette)
             if stray:
                 report("⚠️", i, f"颜色不在 hust_deck 配色里（改用 tone）：{' '.join(stray)}")
@@ -454,6 +465,13 @@ def main():
                 elif (d := card_density(card, shapes)) and d[0] < CARD_MIN_DENSITY and d[1] >= 15:
                     report("⚠️", i, f"卡片「{head}」内容偏少（约 {d[0]:.2f} 字/cm²，充实的卡片在 {CARD_MIN_DENSITY} 以上），"
                                     "补机制、对比、数据或例子；页页都薄时先查提纲是否切得太碎")
+            charts = [sh for sh in shapes if getattr(sh, "has_chart", False) and sh.has_chart]
+            share = sum(sh.width * sh.height for sh in pictures + charts) / (tmpl.w * tmpl.h * CM ** 2)
+            if share == 0:
+                report("⚠️", i, "没有图片也没有图表：先找本工作或文献的原图当证据（figures.md 第 1 节），"
+                                "纯文字页只留给研究问题、总结和下一步")
+            elif share < FIG_MIN_SHARE:
+                report("⚠️", i, f"图和图表只占正文区 {share:.0%}：主图放大，或换成能证明要点句的原图")
             if body_chars > MAX_CHARS:
                 report("⚠️", i, f"正文约 {body_chars} 字，超过 {MAX_CHARS} 字，考虑删减或拆页")
             if not notes:
@@ -466,6 +484,16 @@ def main():
         report("⚠️", carded[0], f"版式单一：{len(carded)}/{n_content} 张内容页都是卡片铺满正文区（第 {'、'.join(map(str, carded))} 页）。"
                                 "检查图是否被缩成卡片里的小图、各页是否同一结构，穿插几页大图或关键数字的轻页，见 references/layouts.md")
 
+    if args.figures:
+        used = {hashlib.sha1(sh.image.blob).hexdigest() for slide in prs.slides for sh in iter_shapes(slide.shapes)
+                if sh.shape_type == MSO_SHAPE_TYPE.PICTURE}
+        files = sorted(p for p in Path(args.figures).iterdir() if p.suffix.lower() in IMG_EXT)
+        unused = [p.name for p in files if hashlib.sha1(p.read_bytes()).hexdigest() not in used]
+        if unused:
+            warns += 1
+            print(f"⚠️ {args.figures} 里 {len(unused)}/{len(files)} 张图没放进 PPT（取了没用，看哪些能当证据）："
+                  f"{'、'.join(unused)}")
+
     print("\n标题 ｜ 要点句 ｜ 过渡句（口播第一句）：按顺序读，应能连成完整的论证、前后接得上")
     for i, t, point, bridge in titles:
         print(f"  {i:>2}. {t} ｜ {point or '（没有要点句）'} ｜ {bridge or '（没有口播稿）'}")
@@ -475,7 +503,8 @@ def main():
 
 def near_misses(blocks):
     """主要块之间同一条边（左、右、上、下）相差 NEAR_MISS 范围内的情况。
-    两块的对边已经对齐时不比这条边：上沿对齐、高度不同的一排图，下沿本来就各不相同。"""
+    两块的对边已经对齐时不比这条边：上沿对齐、高度不同的一排图，下沿本来就各不相同。
+    两块在这个方向上居中对齐时也不比：图片表格同一列里宽高比不同的图，中心对齐、左右边自然不齐。"""
     out = []
     edges = ("左", 0, 2), ("上", 1, 3), ("右", 2, 0), ("下", 3, 1)
     for k, a in enumerate(blocks):
@@ -483,7 +512,8 @@ def near_misses(blocks):
             ba, bb = bbox(a), bbox(b)
             for side, e, opp in edges:
                 d = abs(ba[e] - bb[e]) / CM
-                if NEAR_MISS[0] < d < NEAR_MISS[1] and abs(ba[opp] - bb[opp]) / CM > NEAR_MISS[0]:
+                centred = abs((ba[e] + ba[opp]) - (bb[e] + bb[opp])) / 2 / CM <= NEAR_MISS[0]
+                if NEAR_MISS[0] < d < NEAR_MISS[1] and abs(ba[opp] - bb[opp]) / CM > NEAR_MISS[0] and not centred:
                     out.append(f"「{a.name}」和「{b.name}」{side}边差 {d:.2f}cm")
     return out
 

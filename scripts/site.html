@@ -172,6 +172,48 @@ button:disabled { cursor:default; opacity:.4; }
   color:#64748B; font-size:calc(13 * var(--pt)); padding:calc(.3 * var(--cm)); }
 .ph::before { content:"【" attr(data-kind) "】"; font-weight:700; }
 .bd > .ph, .tint > .ph { flex:1; }
+/* 真图：<figure class="fig"><img src="../figures/x.png"><figcaption>图注</figcaption></figure>，图等比缩进剩余空间 */
+.fig { margin:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:calc(.1 * var(--cm));
+  min-height:0; min-width:0; }
+.fig img { flex:1; min-height:0; max-width:100%; object-fit:contain; display:block; }
+.b > img { width:100%; height:100%; object-fit:contain; display:block; }
+.fig figcaption, .cap { font-size:calc(13 * var(--pt)); color:#64748B; text-align:center; line-height:1.3; }
+.bd > .fig, .tint > .fig, .panel > .fig, .pbody > .fig { flex:1; }
+/* 分组框：虚线边框 + 压在上边框正中的实色标签；.side 为左侧竖排标签。对应 panel() */
+.b.panel { overflow:visible; }
+.panel { border:calc(1 * var(--pt)) dashed var(--p); border-radius:calc(.3 * var(--cm)); display:flex; flex-direction:column;
+  gap:calc(.2 * var(--cm)); padding:calc(.65 * var(--cm)) calc(.4 * var(--cm)) calc(.3 * var(--cm)); }
+.ptab { position:absolute; top:calc(-.45 * var(--cm)); left:50%; transform:translateX(-50%); height:calc(.9 * var(--cm));
+  background:var(--p); color:#fff; font-weight:700; font-size:calc(18 * var(--pt)); padding:0 calc(.8 * var(--cm));
+  border-radius:calc(.15 * var(--cm)); display:flex; align-items:center; white-space:nowrap; }
+.panel.side { flex-direction:row; padding:calc(.3 * var(--cm)); }
+.panel.side > .ptab { position:static; transform:none; writing-mode:vertical-rl; white-space:nowrap; align-self:stretch;
+  width:calc(1 * var(--cm)); height:auto;
+  padding:0; font-size:calc(16 * var(--pt)); justify-content:center; flex:none; margin-right:calc(.1 * var(--cm)); }
+.pbody { flex:1; min-width:0; display:flex; flex-direction:column; gap:calc(.2 * var(--cm)); }
+.concl { color:var(--a-ink); font-weight:700; }
+/* 一组图 + 图注 + 底部几行：对应 figblock()。.imgs 里每个 div 是一行图，底部行数相同的几块自动对齐 */
+.figblock { flex:1; min-height:0; display:flex; flex-direction:column; gap:calc(.1 * var(--cm)); }
+.figblock .imgs { flex:1; min-height:0; display:flex; flex-direction:column; justify-content:flex-end; gap:calc(.2 * var(--cm)); }
+.figblock .imgs > div { flex:1; min-height:0; display:flex; justify-content:center; gap:calc(.2 * var(--cm)); }
+.figblock .imgs img { min-width:0; max-height:100%; object-fit:contain; }
+.figblock .cap { font-size:calc(12 * var(--pt)); color:#64748B; text-align:center; }
+.figblock .ends { text-align:center; } .figblock .ends p + p { margin-top:calc(6 * var(--pt)); }
+.figblock .ends b { color:var(--p-ink); }
+.stage .fine { font-size:calc(12 * var(--pt)); line-height:1.3; }
+.ftbl td { font-size:calc(12 * var(--pt)); }
+/* 图片表格：表头一行、行名一列浅底，格子里放图或数值。对应 figtable() */
+table.ftbl { border-collapse:separate; border-spacing:calc(.12 * var(--cm)); width:100%; height:100%; table-layout:fixed;
+  font-size:calc(13 * var(--pt)); }
+.ftbl th { background:var(--p-tint); color:var(--p-ink); font-weight:700; text-align:center; border-radius:calc(.1 * var(--cm)); }
+.ftbl thead th:first-child { background:none; }
+.ftbl tr > :first-child { width:calc(2.2 * var(--cm)); }
+.ftbl td { text-align:center; vertical-align:middle; color:#1E293B; }
+/* 表头和纯文字行收到内容高度，剩下的高度由含图的行平分；图绝对定位，不把行撑高 */
+.ftbl thead tr, .ftbl tr:not(:has(img)) { height:1px; }
+.ftbl td:has(img) { position:relative; }
+.ftbl td img { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; display:block; }
+.refs { position:absolute; font-size:calc(9 * var(--pt)); line-height:calc(10 * var(--pt)); color:#64748B; }
 table.tbl { border-collapse:collapse; width:100%; }
 .tbl th { text-align:left; color:#1E293B; border-bottom:calc(1.2 * var(--pt)) solid var(--p); padding:calc(.12 * var(--cm)) calc(.2 * var(--cm)); }
 .tbl td { border-bottom:calc(.5 * var(--pt)) solid #D7E0EC; padding:calc(.12 * var(--cm)) calc(.2 * var(--cm)); vertical-align:top; }
@@ -222,6 +264,12 @@ function bottombar(bar) {
   const style = `left:${cm(B.x + 0.6)};top:${cm(B.y + B.h - 1.6)};width:${cm(B.w - 1.2)};height:${cm(1.25)}`;
   return `<div class="bbar" style="${style}"><b>${esc(bar[0])}</b><span>${esc(bar[1])}</span></div>`;
 }
+function refsFoot(refs) {
+  // 和 hust_deck 的 refs() 一样：贴正文区底边 0.1cm，左边对齐网格，右边让出页码；9pt、10pt 行距
+  if (!refs || !refs.length) return "";
+  const style = `left:${cm(B.x + 0.6)};bottom:${cm(SH - B.y - B.h + 0.1)};width:${cm(B.w - 2.4)}`;
+  return `<div class="refs" style="${style}">${refs.map(r => `<div>${esc(r)}</div>`).join("")}</div>`;
+}
 function leadBar(point) {
   if (!point) return "";
   const style = `left:${cm(B.x + 0.6)};top:${cm(B.y + 0.4)};width:${cm(B.w - 1.2)};height:${cm(1.0)}`;
@@ -233,7 +281,8 @@ function slideHTML(s, vi) {
     const pg = C.pages.content; bg = pg.bg;
     const v = s.variants[vi] || s.variants[0];
     inner = overlay(pg.texts.label, s.part) + overlay(pg.texts.title, s.title) + overlay(pg.texts.num, s.n) + leadBar(s.point) +
-      (v ? v.html : `<div class="b ph" data-grid="0,0,12,6" data-kind="初稿">这一页还没写网页初稿</div>`) + bottombar(s.bar);
+      (v ? v.html : `<div class="b ph" data-grid="0,0,12,6" data-kind="初稿">这一页还没写网页初稿</div>`) + bottombar(s.bar) +
+      refsFoot(s.refs);
   } else if (s.type === "divider") {
     const pg = C.pages.divider; bg = pg.bg;
     inner = overlay(pg.texts.title, s.title) + overlay(pg.texts.num, s.n);
@@ -249,17 +298,18 @@ function slideHTML(s, vi) {
       <div class="note-s">目录示意，设计稿用模板目录页</div></div>`;
   }
   const cols = s.cols || 12;
-  return `<div class="slide" style="${toneVars()}"><div class="stage" data-cols="${cols}" data-bar="${s.bar ? 1 : 0}"
+  return `<div class="slide" style="${toneVars()}"><div class="stage" data-cols="${cols}" data-bottom="${s.bottom || 1.6}"
     data-lead="${s.point ? 1 : 0}" style="${bg ? `background-image:url(${bg})` : ""}">${inner}</div></div>`;
 }
-// 和 hust_deck.Grid 相同的网格：正文区左右各留 0.6，上留 0.5（有要点句时 2.0），下边留 1.6（有总结条时 2.2），格间距 0.6
+// 和 hust_deck.Grid 相同的网格：正文区左右各留 0.6，上留 0.5（有要点句时 2.0），格间距 0.6；
+// 下边留多少由 outline.py 按总结条、页脚参考文献算好（data-bottom，默认 1.6）
 function layout(root) {
   root.querySelectorAll(".stage").forEach(st => {
-    const bar = st.dataset.bar === "1", lead = st.dataset.lead === "1";
+    const lead = st.dataset.lead === "1", below = Number(st.dataset.bottom);
     st.querySelectorAll("[data-grid]").forEach(el => {
       const [c, r, w, h] = el.dataset.grid.split(",").map(Number);
       const cols = Number(el.dataset.cols || st.dataset.cols), gap = 0.6, rows = 6;
-      const top = B.y + (lead ? 2.0 : 0.5), bottom = B.y + B.h - (bar ? 2.2 : 1.6);
+      const top = B.y + (lead ? 2.0 : 0.5), bottom = B.y + B.h - below;
       const cw = (B.w - 1.2 - gap * (cols - 1)) / cols, rh = (bottom - top - gap * (rows - 1)) / rows;
       el.classList.add("b");
       Object.assign(el.style, { left:cm(B.x + 0.6 + c * (cw + gap)), top:cm(top + r * (rh + gap)),

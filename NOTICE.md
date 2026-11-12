@@ -16,7 +16,7 @@
 
 ## 参考的项目
 
-`references/content_rules.md` 与 SKILL.md 的单页法则参考了以下项目的思路，文字和代码均为重新编写：
+`references/content_rules.md` 与 SKILL.md 的页面硬性约定参考了以下项目的思路，文字和代码均为重新编写：
 
 - [academic-pptx-skill](https://github.com/gabberflast/academic-pptx-skill)（MIT License, Copyright (c) 2026 Gabberflast）：
   结论句标题、只读标题测试、一页一个证据、引用规范。

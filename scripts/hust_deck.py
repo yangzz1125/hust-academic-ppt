@@ -50,7 +50,7 @@ from pptx.util import Emu, Pt
 
 __all__ = ["Deck", "Canvas", "Box", "Grid", "P", "R", "var", "place", "tw", "pt2cm", "fill_text",
            "INK", "TEXT", "GRAY", "LINE", "WHITE", "TONES", "TYPE_NAMES", "S_TITLE", "S_BODY", "S_SMALL", "S_MARK", "S_DISPLAY",
-           "MSO_SHAPE", "templates", "aspect", "on_image"]
+           "S_NOTE", "S_REF", "MSO_SHAPE", "templates", "aspect", "on_image", "refs_bottom"]
 
 TEMPLATES = Path(__file__).resolve().parent.parent / "templates"
 
@@ -85,11 +85,16 @@ TONES = {}
 TYPE_NAMES = {"concept": "概念", "law": "定律", "quantity": "物理量", "formula": "公式",
               "application": "工程应用", "method": "分析方法"}
 
-# ---- 字号（pt）：页面标题 24 由模板提供；正文只用这三档
+# ---- 字号（pt）：页面标题 24 由模板提供；正文用这三档
 S_TITLE, S_BODY, S_SMALL = 18, 16, 13
+# 图注和参数注解的下限（用户明确要求过放宽到 12）：多面板页、图片表格里贴着图写的参数、图注、数值用
+S_NOTE = 12
 # 展示字号：不算正文字号档。S_MARK 给时间线年份这类大字标记；S_DISPLAY 给大序号、拆解的公式、
 # keynum(big=True) 的主角数字。一页最多用一种，整份只在几种命名页型里用（见 references/layouts.md 第 7 节）
 S_MARK, S_DISPLAY = 28, 36
+# 页脚参考文献：9pt 灰字、10pt 行距（用户要求比正文小），只用在 refs() 里，qa_check 按形状名「参考文献」放行
+S_REF, REF_LH = 9, 0.353
+IMG_EXT = (".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tif", ".tiff")
 
 # 要点句条：上沿离正文区顶端 0.4，高 1.0；Grid(lead=True) 在它下面再空一个格间距
 LEAD_TOP, LEAD_H = 0.4, 1.0
@@ -196,6 +201,7 @@ class Grid:
     块的四条边都落在网格线上，所以不同大小的卡片随意组合（便当布局）也能自然对齐、间距一致。
     左右各留 0.6，上边留 0.5；下边 y 1.6，bottombar=True 时留到 y 2.2 给总结条。
     lead=True 时上边让出要点句条（deck.content(..., point=...) 画在 y 13.9–12.9），网格从 y 12.3 起。
+    refs 传这一页的页脚参考文献条目（和 deck.content(refs=) 同一个列表），条目多时下边上移让出位置。
     华科模板（31 × 14.3）上即 x 0.6–30.4、y 1.6–13.8（有要点句时 y 1.6–12.3）。要在 Deck 创建之后用。
 
         g = Grid()
@@ -203,11 +209,11 @@ class Grid:
         c.card(g.box(8, 0, 4, 6))      # 右侧窄栏
     """
 
-    def __init__(self, cols=12, rows=6, gap=0.6, bottombar=False, lead=False):
+    def __init__(self, cols=12, rows=6, gap=0.6, bottombar=False, lead=False, refs=None):
         t = current()
         self.cols, self.rows, self.gap = cols, rows, gap
         self.l, self.t = 0.6, t.h - (LEAD_TOP + LEAD_H + 0.6 if lead else 0.5)  # 要点句条下固定空 0.6，和格间距无关
-        bottom = 2.2 if bottombar else 1.6
+        bottom = max(2.2 if bottombar else 1.6, refs_bottom(refs) if refs else 0)
         self.cw = (t.w - 0.6 - self.l - gap * (cols - 1)) / cols
         self.rh = (self.t - bottom - gap * (rows - 1)) / rows
 
@@ -217,6 +223,20 @@ class Grid:
             raise ValueError(f"块 ({col}, {row}, {w}, {h}) 超出 {self.cols}×{self.rows} 网格")
         return Box(self.l + col * (self.cw + self.gap), self.t - row * (self.rh + self.gap),
                    w * self.cw + (w - 1) * self.gap, h * self.rh + (h - 1) * self.gap)
+
+
+def _refs_box(entries):
+    """页脚参考文献的文本框：左边和网格对齐，右边让出模板的页码，下沿 y 0.1，高度按估算行数。"""
+    t = current()
+    w = t.w - 0.6 - 1.8
+    lines = sum(-(-tw(s, S_REF) // (w - 0.3)) for s in entries)
+    h = lines * REF_LH + 0.05
+    return Box(0.6, 0.1 + h, w, h)
+
+
+def refs_bottom(entries):
+    """有页脚参考文献时网格下边至少要在的 y：文献 4 行以内仍在默认下边距（y 1.6）以下，多了往上让。"""
+    return max(1.6, _refs_box(entries).t + 0.1)
 
 
 def place(anchor, x, y, w, h):
@@ -338,6 +358,7 @@ class Canvas:
         self.slide = slide
         self.shapes = slide.shapes
         self.n = 0
+        self.has_refs = self.has_bar = False  # 页脚参考文献和页底总结条占同一块地方，一页只能有一个
 
     def _finish(self, shp, kind):
         # 自选形状自带主题样式（p:style），会带阴影和主题色；删掉后颜色全部由本模块显式写出
@@ -524,12 +545,100 @@ class Canvas:
 
     def bottombar(self, label, text, y=0.35):
         """页底总结条：左侧粗体标签，分隔线，右侧一句话。左右边和 Grid 的卡片对齐（左右各留 0.6）。"""
+        if self.has_refs:
+            raise ValueError("这一页有页脚参考文献，不能再加页底总结条：把这句话写进要点句或某个面板的结论")
+        self.has_bar = True
         bar = Box(0.6, y + 1.25, current().w - 1.2, 1.25)
         self.tint(bar)
         self.at("w", bar.l + 0.5, bar.cy, label, color=TONES["primary"].base, bold=True)
         sep = bar.l + 0.5 + tw(label, S_BODY) + 0.6
         self.line((sep, bar.cy - 0.35), (sep, bar.cy + 0.35), LINE, 1.0)
         self.at("w", sep + 0.4, bar.cy, text)
+
+    def refs(self, entries):
+        """页脚参考文献：9pt 灰字，一条一段，贴页面底部（用户要求的答辩、开题写法）。条目写完整的 GB/T 7714 著录，
+        前面带「[n]」，n 按在本 PPT 里第一次出现的顺序编号。由 deck.content(refs=) 调用；
+        网格用 Grid(..., refs=同一个列表) 让出位置。"""
+        if self.has_bar:
+            raise ValueError("这一页有页底总结条，不能再加页脚参考文献")
+        self.has_refs = True
+        self.text(_refs_box(entries), [P(s) for s in entries], kind="参考文献", size=S_REF, color=GRAY,
+                  line=10, anchor="b")
+
+    def panel(self, box, label, tone="primary", side=False):
+        """分组框：虚线圆角边框加实色标签，把一页分成两到四个面板（多面板页，layouts.md 第 7 节）。
+        side=False 时标签是压在上边框正中的实色条；side=True 时是左边一条竖排标签，给又宽又矮的面板用（标签 2–6 个字）。
+        返回标签以内放内容的 Box：面板里放图、参数和一句强调色结论，不再套卡片。"""
+        t = TONES[tone]
+        frame = self.shape("分组框", MSO_SHAPE.ROUNDED_RECTANGLE, box, None, t.base, 1.0, radius=0.3)
+        frame.line.dash_style = MSO_LINE.DASH
+        if side:
+            tab = Box(box.l + 0.3, box.t - 0.3, 1.0, box.h - 0.6)
+            shp = self.shape("标签", MSO_SHAPE.ROUNDED_RECTANGLE, tab, t.base, radius=0.15)
+            fill_text(shp.text_frame, label, size=S_BODY, color=WHITE, bold=True, align="c", anchor="m")
+            shp.text_frame._txBody.find(qn("a:bodyPr")).set("vert", "eaVert")
+            return Box(tab.r + 0.4, box.t - 0.3, box.r - tab.r - 0.7, box.h - 0.6)
+        w = tw(label, S_TITLE) + 1.6
+        tab = Box(box.cx - w / 2, box.t + 0.45, w, 0.9)
+        shp = self.shape("标签", MSO_SHAPE.ROUNDED_RECTANGLE, tab, t.base, radius=0.15)
+        fill_text(shp.text_frame, label, size=S_TITLE, color=WHITE, bold=True, align="c", anchor="m", wrap=False)
+        return Box(box.l + 0.4, box.t - 0.65, box.w - 0.8, box.h - 0.95)
+
+    def figblock(self, box, rows, caption=None, lines=(), text_h=None, gap=0.2):
+        """一组文献图加底部几行字：图拼成一组（rows 同 gallery）→ 一行 12pt 灰字图注 → lines（16pt 居中，
+        每项一段，如「调的参数：…」和一句强调色结果）。底部文字从 box 底边往上排，同一页几块用同样的 lines 行数时，
+        图注和每一行在各块里落在同一高度，横着读就是要点句的证据（多面板页，layouts.md 第 7 节）。
+        text_h 默认按 lines 段数算（每段约 0.95cm）。图贴着图注往上排，图多、图小都可以：文献图是展示用的。
+        返回图组占用的 Box。"""
+        text_h = text_h if text_h is not None else 0.95 * len(lines)
+        cap_h = 0.6 if caption else 0
+        text_t = box.b + text_h
+        if lines:
+            paras = [p if isinstance(p, P) else P(p) for p in lines]
+            paras = [paras[0]] + [P(*p.runs, bullet=p.bullet, before=p.before or 6) for p in paras[1:]]  # 段间空 6pt
+            self.text(Box(box.l, text_t, box.w, text_h), paras, size=S_BODY, align="c", line=22)
+        if caption:
+            self.text(Box(box.l, text_t + cap_h, box.w, cap_h), caption, kind="图注", size=S_NOTE, color=GRAY,
+                      align="c", anchor="m")
+        return self.gallery(Box(box.l, box.t, box.w, box.t - text_t - cap_h - 0.1), rows, gap=gap, valign="s")
+
+    def figtable(self, box, heads, rows, label_w=2.2, head_h=0.9, text_h=0.8, gap=0.12, tone="primary"):
+        """图片表格：列是工况或参数，行是方法或指标，格子里放结果图或数值（layouts.md 第 7 节「图片表格」）。
+        heads 为各列表头（不含行名列）；rows 为 [(行名, [格子, ...]), ...]，格子是图片路径（Path 或以图片扩展名结尾的 str）、
+        文字或 None。含图片的行平分剩余高度，纯文字行（如每列的指标值）高 text_h。
+        表头一条浅底、每个行名一块浅底，行间细线，图在格子里等比居中。返回 {(行, 列): 格子 Box}。"""
+        t = TONES[tone]
+        is_img = lambda c: isinstance(c, Path) or (isinstance(c, str) and c.lower().endswith(IMG_EXT))  # noqa: E731
+        img_rows = [any(is_img(c) for c in cells) for _, cells in rows]
+        for k, (name, cells) in enumerate(rows):
+            if len(cells) != len(heads):
+                raise ValueError(f"第 {k + 1} 行「{name}」有 {len(cells)} 格，表头有 {len(heads)} 列")
+        n_txt = img_rows.count(False)
+        rh_img = (box.h - head_h - text_h * n_txt) / max(img_rows.count(True), 1)
+        cw = (box.w - label_w) / len(heads)
+        self.tint(Box(box.l, box.t, box.w, head_h), tone)
+        for k, h in enumerate(heads):
+            self.text(Box(box.l + label_w + k * cw, box.t, cw, head_h), h, kind="表头", size=S_SMALL,
+                      color=t.ink, bold=True, align="c", anchor="m")
+        out, y = {}, box.t - head_h
+        for r, ((name, cells), has_img) in enumerate(zip(rows, img_rows)):
+            h = rh_img if has_img else text_h
+            self.tint(Box(box.l, y - gap, label_w - gap, h - 2 * gap), tone)
+            self.text(Box(box.l, y - gap, label_w - gap, h - 2 * gap), name, kind="行名", size=S_SMALL,
+                      color=t.ink, bold=True, align="c", anchor="m")
+            for k, cell in enumerate(cells):
+                cb = Box(box.l + label_w + k * cw + gap, y - gap, cw - 2 * gap, h - 2 * gap)
+                out[(r, k)] = cb
+                if cell is None:
+                    continue
+                if is_img(cell):
+                    self.figure(cell, cb)
+                else:
+                    self.text(cb, cell, kind="格子", size=S_NOTE, color=INK, align="c", anchor="m")
+            y -= h
+            if r < len(rows) - 1:
+                self.line((box.l + label_w, y), (box.r, y), LINE, 0.75)
+        return out
 
     def legend(self, x, y, tones, directed=True, undirected=True):
         """图例：tones 为类型色名列表（如 ["concept", "law"]），名称取 TYPE_NAMES；再加有方向 / 无方向两种线。"""
@@ -987,9 +1096,10 @@ class Deck:
         _set_text(_find(s.shapes, "章节标题"), f"{cn_num(self.sections.index(name) + 1)}、{name}")
         return s
 
-    def content(self, section, title, notes="", point=None):
+    def content(self, section, title, notes="", point=None, refs=None):
         """内容页：右上角章节标签 + 页面标题（写主题词）+ 口播稿备注，返回正文画布。
-        point 是这一页的要点句（20 字以内），画在正文区顶部的浅底条里；给了 point，正文就用 Grid(lead=True)。"""
+        point 是这一页的要点句（20 字以内），画在正文区顶部的浅底条里；给了 point，正文就用 Grid(lead=True)。
+        refs 是页脚参考文献条目（见 Canvas.refs），给了 refs，正文就用 Grid(..., refs=refs)。"""
         s = self._clone(self.content_t)
         _set_text(_find(s.shapes, "章节标签"), section)
         _set_text(_find(s.shapes, "页面标题"), title)
@@ -998,6 +1108,8 @@ class Deck:
         c = Canvas(s)
         if point:
             c.lead(point)
+        if refs:
+            c.refs(refs)
         return c
 
     def save(self, path):

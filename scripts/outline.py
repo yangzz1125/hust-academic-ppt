@@ -5,7 +5,8 @@
                                                             # 生成汇报网页：讲稿、便签画布、翻页预览（搜索 / 初稿 / 设计稿）
     python outline.py chrome hust                           # 从模板生成网页初稿用的外观底图（换模板或改模板后跑一次）
 
-运行：uv run --no-project --with python-pptx --with lxml python -X utf8 outline.py <子命令> ...
+运行：uv run --no-project --with python-pptx --with lxml --with pillow python -X utf8 outline.py <子命令> ...
+（pillow 用于把初稿里 <img> 引用的图缩小后嵌进网页）
 chrome 还要用 render.py（LibreOffice）渲染，结果存在 templates/<模板>/web/，生成后提交进仓库，平时不用再跑。
 
 一份汇报的目录里：script.md 是讲稿（先写，用户确认后再切页），outline.json 是每页的标题、要点句和出处，
@@ -16,6 +17,7 @@ draft/<页 id>.html 是网页初稿。讲稿里用单独一行 [页 id] 标出�
 import argparse
 import base64
 import html
+import io
 import json
 import re
 import subprocess
@@ -26,7 +28,7 @@ from pathlib import Path
 from lxml import etree
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from hust_deck import Deck, TONES, cn_num, pt2cm, tw, use_template  # noqa: E402
+from hust_deck import Deck, TONES, cn_num, pt2cm, refs_bottom, tw, use_template  # noqa: E402
 from pptx.enum.shapes import PP_PLACEHOLDER  # noqa: E402
 from pptx.opc.constants import RELATIONSHIP_TYPE as RT  # noqa: E402
 from pptx.oxml.ns import qn  # noqa: E402
@@ -43,6 +45,8 @@ GRID_TAG_RE = re.compile(r"<[^>]*\bdata-grid=\"([^\"]*)\"[^>]*>")
 COLS_RE = re.compile(r"\bdata-cols=\"(\d+)\"")
 VARIANT_RE = re.compile(r"(<section\b[^>]*\bclass=\"variant\"[^>]*>)(.*?)</section>", re.S)
 LABEL_RE = re.compile(r"\bdata-label=\"([^\"]*)\"")
+IMG_SRC_RE = re.compile(r"(<img\b[^>]*?\bsrc=\")([^\"]+)(\")", re.I)
+DRAFT_IMG_W = 900  # 初稿里的图缩到这个宽度（像素）再嵌进网页，整个网页才不会超过发布的大小上限
 
 
 def fail(where, msg):
@@ -84,13 +88,15 @@ def load(path):
                     fail(pw, f"{k} 应为非空字符串")
             if "title" not in page:
                 fail(pw, "缺少 title（主题词标题）")
-            for k in ("sources", "research"):
+            for k in ("sources", "research", "refs"):
                 v = page.get(k, [])
                 if not (isinstance(v, list) and all(isinstance(s, str) for s in v)):
                     fail(pw, f"{k} 应为字符串列表")
             bar = page.get("bottombar")
             if bar is not None and not (isinstance(bar, list) and len(bar) == 2 and all(isinstance(s, str) for s in bar)):
                 fail(pw, "bottombar 应为 [标签, 一句话]")
+            if bar and page.get("refs"):
+                fail(pw, "bottombar 和 refs 占同一块页底，只能有一个")
     data["dir"] = Path(path).resolve().parent
     data["script"] = load_script(data["dir"] / "script.md", ids)
     return data
@@ -366,6 +372,35 @@ def data_uri(path):
     return "data:image/png;base64," + base64.b64encode(Path(path).read_bytes()).decode()
 
 
+def thumb_uri(path):
+    """初稿里的图：缩到 DRAFT_IMG_W 宽后转 data URI；有透明通道的存 PNG，其余存 JPEG。"""
+    from PIL import Image
+    im = Image.open(path)
+    if im.width > DRAFT_IMG_W:
+        im = im.resize((DRAFT_IMG_W, round(im.height * DRAFT_IMG_W / im.width)), Image.LANCZOS)
+    buf = io.BytesIO()
+    if im.mode in ("RGBA", "LA", "P"):
+        im.convert("RGBA").save(buf, "PNG", optimize=True)
+        mime = "png"
+    else:
+        im.convert("RGB").save(buf, "JPEG", quality=82)
+        mime = "jpeg"
+    return f"data:image/{mime};base64," + base64.b64encode(buf.getvalue()).decode()
+
+
+def inline_images(src, root, where):
+    """把初稿片段里 <img src="相对路径"> 换成嵌入的图。路径先按 draft/ 目录解析（../figures/x.png），再按汇报目录解析。"""
+    def sub(m):
+        url = m.group(2)
+        if url.startswith(("data:", "http://", "https://")):
+            return m.group(0)
+        path = next((p for p in (root / "draft" / url, root / url) if p.exists()), None)
+        if path is None:
+            fail(where, f"图片不存在：{url}（相对 draft/ 或汇报目录）")
+        return m.group(1) + thumb_uri(path) + m.group(3)
+    return IMG_SRC_RE.sub(sub, src)
+
+
 def site_slides(data, design):
     """网页脚本用的数据：每页一项，按幻灯片顺序。design 为设计稿渲染图目录（p-NN.png），没有时为 None。"""
     meta = data["meta"]
@@ -394,8 +429,11 @@ def site_slides(data, design):
                 "title": page["title"], "point": page.get("point", ""), "notes": "\n".join(ps),
                 "bridge": first_sentence(ps[0]) if ps else "",
                 "research": page.get("research", []), "sources": page.get("sources", []),
-                "bar": page.get("bottombar"), "cols": page.get("cols", 12),
-                "variants": [{"label": lab, "html": src} for lab, src in variants(data, page)],
+                "bar": page.get("bottombar"), "refs": page.get("refs", []), "cols": page.get("cols", 12),
+                # 网格下边离正文区底边的距离，和 Grid(bottombar=, refs=) 同一个算法
+                "bottom": max(2.2 if page.get("bottombar") else 1.6, refs_bottom(page["refs"]) if page.get("refs") else 0),
+                "variants": [{"label": lab, "html": inline_images(src, data["dir"], f"draft/{page['id']}.html")}
+                             for lab, src in variants(data, page)],
                 "design": shot(n), "hints": hs[n]})
     return slides
 
