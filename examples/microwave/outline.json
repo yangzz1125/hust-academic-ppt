@@ -7,7 +7,14 @@
     "occasion": "课程小组汇报",
     "audience": "任课老师和同学",
     "minutes": 10,
-    "thesis": "微波炉加热靠三件事：磁控管产生微波、食物里的分子吸收微波变成热、炉腔里的驻波决定哪里热"
+    "thesis": "微波炉加热靠三件事：磁控管产生微波、食物里的分子吸收微波变成热、炉腔里的驻波决定哪里热",
+    "materials": [
+      {"file": "source/microwave_oven.txt", "role": "核心", "read": "全文", "use": "结构、历史、频段、加热深度、驻波和均匀化"},
+      {"file": "source/cavity_magnetron.txt", "role": "补充", "read": "Construction and operation、History 两节", "use": "磁控管结构和来历"},
+      {"file": "source/dielectric_heating.txt", "role": "补充", "read": "Mechanism、Power 两节", "use": "介电加热原理和功率公式"},
+      {"file": "source/estimates.md", "role": "补充", "read": "全文", "use": "由材料参数算出的波长、热点间距"}
+    ],
+    "strict": false
   },
   "parts": [
     {
@@ -18,7 +25,8 @@
          "research": ["家用微波炉工作在 2.45 GHz，工业炉常用 915 MHz（microwave_oven）",
                       "微波只直接加热食物外层约 1 cm，里面靠热传导（microwave_oven）",
                       "门上的观察窗有导电金属网，网孔远小于波长（microwave_oven）"],
-         "sources": ["source/microwave_oven.txt"]}
+         "sources": ["source/microwave_oven.txt"],
+         "figures": ["家用微波炉炉腔：金属炉腔、观察窗、玻璃转盘（figures/oven_interior.jpg）"]}
       ]
     },
     {
@@ -29,21 +37,25 @@
                       "1945 年斯宾塞在雷达旁发现口袋里的糖果棒化了（microwave_oven）",
                       "1947 年 Radarange 上市，高约 1.8 m、耗电 3 kW、水冷（microwave_oven）",
                       "1967 年 Amana 推出台式机，1970 年代末进入家庭（microwave_oven）"],
-         "sources": ["source/microwave_oven.txt", "source/cavity_magnetron.txt"]},
+         "sources": ["source/microwave_oven.txt", "source/cavity_magnetron.txt"],
+         "figures": ["1940 年原型腔体磁控管（figures/magnetron_1940.jpg）", "早期 Radarange（figures/radarange_early.jpg）", "带转盘的炉腔（figures/turntable.jpg）", "Amana 台式微波炉（figures/amana_radarange.jpg）", "1970 年代后的家用微波炉（figures/oven_interior.jpg）"]},
         {"id": "magnetron", "title": "磁控管的结构与原理", "point": "电子绕着谐振腔转，像吹哨一样激发微波",
          "research": ["阴极加热后发射电子，阳极是一块铜，两者之间加直流高压（cavity_magnetron）",
                       "轴向磁场让电子走弯曲的路，电流绕谐振腔流动形成振荡（cavity_magnetron）",
                       "谐振腔两壁像电容、圆孔像电感，频率由尺寸决定（cavity_magnetron）"],
-         "sources": ["source/cavity_magnetron.txt"]},
+         "sources": ["source/cavity_magnetron.txt"],
+         "figures": ["拆开的家用磁控管，图上自带 1–6 编号（figures/magnetron.jpg）"]},
         {"id": "power", "title": "从电能到微波", "cols": 5, "point": "约一半电能在磁控管里变成微波",
          "research": ["电源：变压器升压，电容和二极管倍压成直流高压（microwave_oven）",
                       "电能变成微波的比例：普通型号约 50%，节能型号超过 64%（microwave_oven）"],
-         "sources": ["source/microwave_oven.txt"]},
+         "sources": ["source/microwave_oven.txt"],
+         "figures": ["墙上的电源插座（figures/sockets.jpg）", "高压变压器（figures/transformer.jpg）", "家用磁控管（figures/magnetron_unit.jpg）", "矩形波导部件（figures/waveguides.jpg）", "炉腔（figures/oven_interior.jpg）"]},
         {"id": "band", "title": "为什么是 2.45 GHz", "point": "只有 2.45 GHz 是全球通用的 ISM 频段",
          "research": ["微波炉必须用 ISM 频段，避免干扰其他无线电业务（microwave_oven）",
                       "915 MHz 只在部分国家可用，5.8 GHz 大功率成本高，2.45 GHz 全球可用（microwave_oven）",
                       "波长：915 MHz 32.8 cm，2.45 GHz 12.2 cm，5.8 GHz 约 5.2 cm（estimates）"],
-         "sources": ["source/microwave_oven.txt", "source/estimates.md"]}
+         "sources": ["source/microwave_oven.txt", "source/estimates.md"],
+         "figures": ["三个候选频段的波长对比横条（脚本画）"]}
       ]
     },
     {
@@ -54,11 +66,13 @@
          "research": ["吸热功率密度 p = ω ε0 εr″ E²（dielectric_heating）",
                       "分子转动时推挤、碰撞周围分子，把场能变成热（dielectric_heating）",
                       "不是共振：极性分子在很宽的频率范围都能吸热（dielectric_heating）"],
-         "sources": ["source/dielectric_heating.txt"]},
+         "sources": ["source/dielectric_heating.txt"],
+         "figures": ["介电加热功率公式，各项向下引出解释（脚本画）"]},
         {"id": "depth", "title": "微波的加热深度", "point": "微波只直接加热外层约 1 cm",
          "research": ["2.45 GHz 微波直接加热多数食物外层约 1 cm，含水多时可达数厘米（microwave_oven）",
                       "频率越低，电场进入非导体越深；915 MHz 波长 32.8 cm（estimates）"],
-         "sources": ["source/microwave_oven.txt", "source/estimates.md"]}
+         "sources": ["source/microwave_oven.txt", "source/estimates.md"],
+         "figures": ["微波炉和烤箱的加热剖面对比（脚本画）"]}
       ]
     },
     {
@@ -67,13 +81,15 @@
         {"id": "standing", "title": "炉腔里的驻波", "point": "金属腔反射成驻波，热点相距约 6.1 cm",
          "research": ["炉腔像法拉第笼，观察窗金属网的网孔远小于 12.2 cm（microwave_oven）",
                       "λ = c / f ≈ 12.2 cm，热点间距 λ/2 = 6.1 cm（estimates）"],
-         "sources": ["source/microwave_oven.txt", "source/estimates.md"]},
+         "sources": ["source/microwave_oven.txt", "source/estimates.md"],
+         "figures": ["一维模型：离炉壁 x cm 处的相对加热强度曲线（原生图表，脚本画）"]},
         {"id": "uniform", "title": "让加热更均匀的办法", "point": "让食物或场动起来，轮流经过热点",
          "bottombar": ["使用建议", "食物偏离转盘中心放，受热更均匀；最便宜的机型没有这些机构，要中途停下搅拌"],
          "research": ["夏普 1964–1966 年推出转盘，占掉方形炉腔近 1/4 容积（microwave_oven）",
                       "搅拌器叶片在顶部塑料盖板上方转动，商用炉用得多（microwave_oven）",
                       "变频电源低档位持续输出低功率，不再整功率开关（microwave_oven）"],
-         "sources": ["source/microwave_oven.txt"]}
+         "sources": ["source/microwave_oven.txt"],
+         "figures": ["带玻璃转盘的炉腔（figures/turntable.jpg）", "四种均匀化办法对比表（脚本画）"]}
       ]
     },
     {

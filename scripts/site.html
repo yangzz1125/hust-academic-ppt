@@ -192,8 +192,11 @@ button:disabled { cursor:default; opacity:.4; }
   padding:0; font-size:calc(16 * var(--pt)); justify-content:center; flex:none; margin-right:calc(.1 * var(--cm)); }
 .pbody { flex:1; min-width:0; display:flex; flex-direction:column; gap:calc(.2 * var(--cm)); }
 .concl { color:var(--a-ink); font-weight:700; }
-/* 一组图 + 图注 + 底部几行：对应 figblock()。.imgs 里每个 div 是一行图，底部行数相同的几块自动对齐 */
+/* 顶部说明 + 一组图 + 图注 + 底部几行：对应 figblock()。.imgs 里每个 div 是一行图，底部行数相同的几块自动对齐；
+   有 .fhead 时图在说明和图注之间居中 */
 .figblock { flex:1; min-height:0; display:flex; flex-direction:column; gap:calc(.1 * var(--cm)); }
+.figblock .fhead { font-size:calc(13 * var(--pt)); color:#1E293B; text-align:center; line-height:1.3; }
+.figblock .fhead + .imgs { justify-content:center; }
 .figblock .imgs { flex:1; min-height:0; display:flex; flex-direction:column; justify-content:flex-end; gap:calc(.2 * var(--cm)); }
 .figblock .imgs > div { flex:1; min-height:0; display:flex; justify-content:center; gap:calc(.2 * var(--cm)); }
 .figblock .imgs img { min-width:0; max-height:100%; object-fit:contain; }
@@ -213,7 +216,8 @@ table.ftbl { border-collapse:separate; border-spacing:calc(.12 * var(--cm)); wid
 .ftbl thead tr, .ftbl tr:not(:has(img)) { height:1px; }
 .ftbl td:has(img) { position:relative; }
 .ftbl td img { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; display:block; }
-.refs { position:absolute; font-size:calc(9 * var(--pt)); line-height:calc(10 * var(--pt)); color:#64748B; }
+.refs { position:absolute; overflow:hidden; font-size:calc(12 * var(--pt)); line-height:1.15; color:#334155; }
+.refs > div + div { margin-top:calc(3 * var(--pt)); }
 table.tbl { border-collapse:collapse; width:100%; }
 .tbl th { text-align:left; color:#1E293B; border-bottom:calc(1.2 * var(--pt)) solid var(--p); padding:calc(.12 * var(--cm)) calc(.2 * var(--cm)); }
 .tbl td { border-bottom:calc(.5 * var(--pt)) solid #D7E0EC; padding:calc(.12 * var(--cm)) calc(.2 * var(--cm)); vertical-align:top; }
@@ -240,7 +244,7 @@ const ICON = {
   draft:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 3h9l4 4v14H6z"/><path d="M9 12h7M9 16h7"/></svg>',
   design:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3a9 9 0 1 0 0 18c1.2 0 1.6-1 1-2-.7-1.2.2-2.5 1.5-2.5H17a4 4 0 0 0 4-4A9.5 9.5 0 0 0 12 3z"/><circle cx="7.5" cy="11" r="1"/><circle cx="10.5" cy="7.5" r="1"/><circle cx="15" cy="7.5" r="1"/></svg>'};
 const TABS = [["search","搜索"],["draft","初稿"],["design","设计稿"]];
-const has = { search:s => s.type === "content" && (s.research.length || s.sources.length),
+const has = { search:s => s.type === "content" && (s.research.length || s.sources.length || s.figures.length || s.todo.length),
               draft:s => s.type !== "content" || s.variants.length > 0, design:s => !!s.design };
 
 // ---------- 幻灯片
@@ -260,15 +264,10 @@ function overlay(spec, text) {
   return `<div class="tx" style="${style}">${mark}${esc(text)}</div>`;
 }
 function bottombar(bar) {
+  // 和 hust_deck 的 bottombar() 一样：下沿离正文区底边 0.35，高 1.25
   if (!bar) return "";
   const style = `left:${cm(B.x + 0.6)};top:${cm(B.y + B.h - 1.6)};width:${cm(B.w - 1.2)};height:${cm(1.25)}`;
   return `<div class="bbar" style="${style}"><b>${esc(bar[0])}</b><span>${esc(bar[1])}</span></div>`;
-}
-function refsFoot(refs) {
-  // 和 hust_deck 的 refs() 一样：贴正文区底边 0.1cm，左边对齐网格，右边让出页码；9pt、10pt 行距
-  if (!refs || !refs.length) return "";
-  const style = `left:${cm(B.x + 0.6)};bottom:${cm(SH - B.y - B.h + 0.1)};width:${cm(B.w - 2.4)}`;
-  return `<div class="refs" style="${style}">${refs.map(r => `<div>${esc(r)}</div>`).join("")}</div>`;
 }
 function leadBar(point) {
   if (!point) return "";
@@ -281,8 +280,13 @@ function slideHTML(s, vi) {
     const pg = C.pages.content; bg = pg.bg;
     const v = s.variants[vi] || s.variants[0];
     inner = overlay(pg.texts.label, s.part) + overlay(pg.texts.title, s.title) + overlay(pg.texts.num, s.n) + leadBar(s.point) +
-      (v ? v.html : `<div class="b ph" data-grid="0,0,12,6" data-kind="初稿">这一页还没写网页初稿</div>`) + bottombar(s.bar) +
-      refsFoot(s.refs);
+      (v ? v.html : `<div class="b ph" data-grid="0,0,12,6" data-kind="初稿">这一页还没写网页初稿</div>`) + bottombar(s.bar);
+  } else if (s.type === "refs") {
+    // 和 hust_deck 的 deck.references() 一样：网格正文区，12pt，一条一段；设计稿按长度分页，这里只示意
+    const pg = C.pages.content; bg = pg.bg;
+    const style = `left:${cm(B.x + 0.6)};top:${cm(B.y + 0.5)};width:${cm(B.w - 1.2)};height:${cm(B.h - 1.3)}`;
+    inner = overlay(pg.texts.label, "参考文献") + overlay(pg.texts.title, s.title) + overlay(pg.texts.num, s.n) +
+      `<div class="refs" style="${style}">${s.items.map(r => `<div>${esc(r)}</div>`).join("")}</div>`;
   } else if (s.type === "divider") {
     const pg = C.pages.divider; bg = pg.bg;
     inner = overlay(pg.texts.title, s.title) + overlay(pg.texts.num, s.n);
@@ -302,7 +306,7 @@ function slideHTML(s, vi) {
     data-lead="${s.point ? 1 : 0}" style="${bg ? `background-image:url(${bg})` : ""}">${inner}</div></div>`;
 }
 // 和 hust_deck.Grid 相同的网格：正文区左右各留 0.6，上留 0.5（有要点句时 2.0），格间距 0.6；
-// 下边留多少由 outline.py 按总结条、页脚参考文献算好（data-bottom，默认 1.6）
+// 下边留多少由 outline.py 按总结条算好（data-bottom，默认 1.6）
 function layout(root) {
   root.querySelectorAll(".stage").forEach(st => {
     const lead = st.dataset.lead === "1", below = Number(st.dataset.bottom);
@@ -367,7 +371,7 @@ function canvas() {
     </div>`;
   // 每章一行：进目录的章节从过渡页起一行；不进目录的（引入、总结）按章节名另起一行
   const rows = [];
-  S.slice(2).forEach(s => {
+  S.slice(2).filter(s => s.type !== "refs").forEach(s => {  // 末尾的参考文献附录不上画布
     const r = rows[rows.length - 1];
     if (s.type === "divider") rows.push({ sec:s, title:s.title, toc:true, part:null, pages:[] });
     else if (r && (r.part === s.part || (r.toc && r.part === null))) { r.part = s.part; r.pages.push(s); }
@@ -384,6 +388,7 @@ function canvas() {
       h += `<div class="note" style="--tilt:${tilt}deg"><div class="top"><span>#${s.n}</span><span class="tag">内容页</span></div>
         <div class="t">${esc(s.title)}</div><div class="pt">${esc(s.point) || "（没写要点句）"}</div>
         ${s.hints.map(x => `<div class="hint">${esc(x)}</div>`).join("")}
+        ${s.todo.map(x => `<div class="hint">待核对：${esc(x)}</div>`).join("")}
         <div class="acts">${TABS.map(([t, lab]) => `<button data-go="${s.n}" data-tab="${t}" ${has[t](s) ? "" : "disabled"}>${ICON[t]}${t === "search" ? "搜索结果" : lab}</button>`).join("")}</div></div>`;
     });
     h += "</div>";
@@ -400,6 +405,9 @@ function preview() {
     main = s.type !== "content" ? `<div class="panel empty">这一页不需要资料</div>` :
       `<div class="panel"><h3>${esc(s.title)}</h3><div class="meta">要点句：${esc(s.point) || "（没写）"}</div></div>
        <div class="panel"><h3>资料要点</h3>${s.research.length ? `<ul>${s.research.map(r => `<li>${esc(r)}</li>`).join("")}</ul>` : `<div class="meta">还没整理资料要点</div>`}</div>
+       ${s.todo.length ? `<div class="panel"><h3>待核对</h3><ul>${s.todo.map(r => `<li>${esc(r)}</li>`).join("")}</ul></div>` : ""}
+       <div class="panel"><h3>图单</h3>${s.figures.length ? `<ul>${s.figures.map(r => `<li>${esc(r)}</li>`).join("")}</ul>` : `<div class="meta">还没列要放的图</div>`}</div>
+       ${s.refs.length ? `<div class="panel"><h3>本页引用（全文在末尾参考文献页）</h3><ul>${s.refs.map(r => `<li>${esc(r)}</li>`).join("")}</ul></div>` : ""}
        <div class="panel"><h3>出处</h3>${s.sources.length ? `<ul>${s.sources.map(r => `<li>${/^https?:/.test(r) ? `<a href="${esc(r)}" target="_blank" rel="noopener">${esc(r)}</a>` : esc(r)}</li>`).join("")}</ul>` : `<div class="meta">没有记出处</div>`}</div>`;
   } else if (state.tab === "design") {
     main = s.design ? `<div class="frame"><img src="${s.design}" alt="第 ${s.n} 页设计稿"></div>` :

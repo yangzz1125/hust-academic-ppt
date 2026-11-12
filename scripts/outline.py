@@ -28,7 +28,7 @@ from pathlib import Path
 from lxml import etree
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from hust_deck import Deck, TONES, cn_num, pt2cm, refs_bottom, tw, use_template  # noqa: E402
+from hust_deck import COLLOQUIAL, Deck, TONES, cn_num, grid_bottom, pt2cm, tw, use_template  # noqa: E402
 from pptx.enum.shapes import PP_PLACEHOLDER  # noqa: E402
 from pptx.opc.constants import RELATIONSHIP_TYPE as RT  # noqa: E402
 from pptx.oxml.ns import qn  # noqa: E402
@@ -45,6 +45,15 @@ GRID_TAG_RE = re.compile(r"<[^>]*\bdata-grid=\"([^\"]*)\"[^>]*>")
 COLS_RE = re.compile(r"\bdata-cols=\"(\d+)\"")
 VARIANT_RE = re.compile(r"(<section\b[^>]*\bclass=\"variant\"[^>]*>)(.*?)</section>", re.S)
 LABEL_RE = re.compile(r"\bdata-label=\"([^\"]*)\"")
+# 图单（页面的 figures 字段）至少列几张：背景章每页 3 张以上（用户指出过「图不够丰富」，figures.md 第 1 节），其余内容页至少 1 张
+FIG_MIN_BACKGROUND, FIG_MIN = 3, 1
+# 图单里写的图片文件（只认图片格式：出处里的论文 PDF 不是要取的图）
+FIG_PATH_RE = re.compile(r"[\w./\\-]+\.(?:png|jpe?g|gif|svg|webp)", re.I)
+# 材料的角色：核心论文、补充论文、仅作背景（不引用、不取图）
+MATERIAL_ROLES = ("核心", "补充", "仅背景")
+CITED_RE = re.compile(r"[（(][^（()）]+[）)]\s*$")          # 资料要点末尾括号里的出处
+DOI_NEEDED_RE = re.compile(r"\[(?:J|C|D)\]")                # 期刊、会议、学位论文条目要带 DOI（有的话）
+WEB_RE = re.compile(r"https?://|Commons|网图|百度|公众号", re.I)  # 严格材料边界下不该出现的来源
 IMG_SRC_RE = re.compile(r"(<img\b[^>]*?\bsrc=\")([^\"]+)(\")", re.I)
 DRAFT_IMG_W = 900  # 初稿里的图缩到这个宽度（像素）再嵌进网页，整个网页才不会超过发布的大小上限
 
@@ -64,6 +73,16 @@ def load(path):
     for k in ("title", "presenter", "date"):
         if not isinstance(meta.get(k), str) or not meta[k]:
             fail("meta", f"缺少字符串字段 {k}")
+    mats = meta.get("materials", [])
+    if not isinstance(mats, list):
+        fail("meta.materials", "应为列表")
+    for k, m in enumerate(mats):
+        if not (isinstance(m, dict) and isinstance(m.get("file"), str) and m["file"] and m.get("role") in MATERIAL_ROLES
+                and all(isinstance(m.get(f, ""), str) for f in ("read", "use"))):
+            fail(f"meta.materials 第 {k + 1} 项",
+                 f"应为 {{\"file\": 文件名, \"role\": {' / '.join(MATERIAL_ROLES)}, \"read\": 读哪些页或节, \"use\": 用途}}")
+    if not isinstance(meta.get("strict", False), bool):
+        fail("meta.strict", "应为 true 或 false")
     parts = data.get("parts")
     if not isinstance(parts, list) or not parts:
         fail("parts", "缺少章节列表")
@@ -88,15 +107,13 @@ def load(path):
                     fail(pw, f"{k} 应为非空字符串")
             if "title" not in page:
                 fail(pw, "缺少 title（主题词标题）")
-            for k in ("sources", "research", "refs"):
+            for k in ("sources", "research", "refs", "figures", "todo"):
                 v = page.get(k, [])
                 if not (isinstance(v, list) and all(isinstance(s, str) for s in v)):
                     fail(pw, f"{k} 应为字符串列表")
             bar = page.get("bottombar")
             if bar is not None and not (isinstance(bar, list) and len(bar) == 2 and all(isinstance(s, str) for s in bar)):
                 fail(pw, "bottombar 应为 [标签, 一句话]")
-            if bar and page.get("refs"):
-                fail(pw, "bottombar 和 refs 占同一块页底，只能有一个")
     data["dir"] = Path(path).resolve().parent
     data["script"] = load_script(data["dir"] / "script.md", ids)
     return data
@@ -157,6 +174,43 @@ def page_paras(data):
 def page_notes(outline_path):
     """{页 id: 口播稿}：讲稿里属于这一页的段落，段间换行。设计稿脚本用它写 deck.content(..., notes=)。"""
     return {k: "\n".join(v) for k, v in page_paras(load(outline_path)).items()}
+
+
+REF_NUM_RE = re.compile(r"^\[(\d+)\]")
+
+
+def collect_refs(data):
+    """各页 refs 里的条目，按页序去重：[(条目, 第一次出现的页码)]。"""
+    seen, out = set(), []
+    for n, _, page in walk(data):
+        for r in page.get("refs", []):
+            if r not in seen:
+                seen.add(r)
+                out.append((r, n))
+    return out
+
+
+def refs_in_order(outline_path):
+    """末尾参考文献附录的条目（deck.references() 用）：各页 refs 按第一次出现的顺序去重。"""
+    return [r for r, _ in collect_refs(load(outline_path))]
+
+
+def ref_hints(data):
+    """参考文献编号的提示：编号要按第一次出现的顺序从 [1] 连续排下去，同一个编号不能对应两条不同的条目。"""
+    h, nums = [], {}
+    for r, n in collect_refs(data):
+        m = REF_NUM_RE.match(r)
+        if not m:
+            h.append(f"第 {n} 页的参考文献没有「[n]」编号：{r[:24]}")
+            continue
+        k = int(m.group(1))
+        if k in nums:
+            h.append(f"编号 [{k}] 对应了两条不同的条目（第 {nums[k]} 页和第 {n} 页），同一篇文献各页要写成完全一样的条目")
+        nums.setdefault(k, n)
+    order = list(nums)
+    if order != list(range(1, len(order) + 1)):
+        h.append(f"编号按第一次出现的顺序应为 1–{len(order)} 连续，现在是 {order}")
+    return h
 
 
 def first_sentence(text):
@@ -228,11 +282,46 @@ def check_blocks(src, page, where):
         fail(where, "没有带 data-grid 的块")
 
 
+NO_FIG_PARTS = ("总结", "结论", "展望", "下一步", "计划", "规划")  # 这些章节的页不查图单
+
+
+def fig_need(part):
+    """这一章每页图单至少几张：章名带「背景」的 FIG_MIN_BACKGROUND，总结、展望、计划类的 0，其余 FIG_MIN。"""
+    if "背景" in part["title"]:
+        return FIG_MIN_BACKGROUND
+    return 0 if any(w in part["title"] for w in NO_FIG_PARTS) else FIG_MIN
+
+
+def material_hints(data, page):
+    """材料边界和出处的提示（references/content_rules.md 第 4 节）：资料要点没写出处、期刊条目没写 DOI、
+    引用了「仅背景」材料；严格材料边界下资料或图来自清单以外（网页、Commons 等）。"""
+    h = []
+    uncited = [r for r in page.get("research", []) if not CITED_RE.search(r)]
+    if uncited:
+        h.append(f"资料要点没写出处（末尾括号写文件名和页码或节号）：{'；'.join(r[:16] for r in uncited)}")
+    no_doi = [r.split("]")[0] + "]" for r in page.get("refs", []) if DOI_NEEDED_RE.search(r) and "doi" not in r.lower()]
+    if no_doi:
+        h.append(f"参考文献没写 DOI：{'、'.join(no_doi)}")
+    mats = data["meta"].get("materials", [])
+    stems = {Path(m["file"]).stem for m in mats}
+    texts = page.get("research", []) + page.get("figures", []) + page.get("sources", []) + page.get("refs", [])
+    for m in mats:
+        stem = Path(m["file"]).stem
+        if m["role"] == "仅背景" and any(stem in t for t in texts):
+            h.append(f"用到了仅作背景的材料「{m['file']}」：它不引用、不取图")
+    if data["meta"].get("strict"):
+        outside = [t[:20] for t in texts if WEB_RE.search(t) and not any(s in t for s in stems)]
+        if outside:
+            h.append(f"严格材料边界下只用材料清单里的论文，这几条来自清单以外：{'；'.join(outside)}")
+    return h
+
+
 def hints(data):
-    """每页的提示：标题偏长、没写或太长的要点句、讲稿里没有这一页。返回 {页码: [提示]}。"""
+    """每页的提示：标题偏长、没写或太长的要点句、讲稿里没有这一页、图单太少或图还没取到、材料边界和出处。
+    返回 {页码: [提示]}。待核对事项（todo）不在这里，check 单独列出。"""
     paras = page_paras(data)
     out = {}
-    for n, _, page in walk(data):
+    for n, part, page in walk(data):
         h = []
         if em(page["title"]) > TITLE_EM:
             h.append(f"标题约 {em(page['title']):.0f} 字，写主题词（{TITLE_EM} 字以内）")
@@ -242,7 +331,19 @@ def hints(data):
             h.append(f"要点句约 {em(page['point']):.0f} 字，压到 {POINT_EM} 字以内")
         if data["script"] and page["id"] not in paras:
             h.append("讲稿里没有这一页（缺 [id] 标记）")
-        out[n] = h
+        spoken = sorted({w for w in COLLOQUIAL for t in (page["title"], page.get("point", "")) if w in t})
+        if spoken:
+            h.append(f"标题、要点句用了口语说法「{'、'.join(spoken)}」，改成书面语（content_rules.md 第 3 节）")
+        figs = page.get("figures", [])
+        need = fig_need(part)
+        if len(figs) < need:
+            h.append(f"图单 {len(figs)} 张（{'背景章每页' if need == FIG_MIN_BACKGROUND else '内容页'}至少 {need} 张），"
+                     "在 figures 里列出要放的图和来源")
+        missing = [p for f in figs for p in FIG_PATH_RE.findall(f)
+                   if not (data["dir"] / p).exists() and not (data["dir"] / "draft" / p).exists()]
+        if missing:
+            h.append(f"图单里的图还没取到：{'、'.join(missing)}")
+        out[n] = h + material_hints(data, page)
     return out
 
 
@@ -267,6 +368,12 @@ def cmd_check(args):
             print(f"  {ch['title'] or '（未分章）'}：{c} 字，约 {c / CHARS_PER_MIN:.1f} 分钟")
     else:
         print("还没有讲稿 script.md")
+    mats = data["meta"].get("materials", [])
+    if mats:
+        count = "、".join(f"{r} {sum(m['role'] == r for m in mats)} 份" for r in MATERIAL_ROLES)
+        print(f"材料清单：{count}；{'严格材料边界（只用清单里的论文）' if data['meta'].get('strict') else '可上网补资料和图'}")
+    else:
+        print("还没写材料清单（meta.materials）")
     if not pages:
         print("\n还没切页：讲稿确认后在 outline.json 的章节下写 pages，并在讲稿里加 [页 id]")
         return
@@ -280,6 +387,16 @@ def cmd_check(args):
         print("\n提示：")
         for n, h in flagged:
             print(f"  ⚠️ 第 {n} 页：{'；'.join(h)}")
+    refs = collect_refs(data)
+    if refs:
+        print(f"\n参考文献 {len(refs)} 条，放在末尾附录（deck.references(refs_in_order(...))）")
+        for h in ref_hints(data):
+            print(f"  ⚠️ {h}")
+    todo = [(n, t) for n, _, page in pages for t in page.get("todo", [])]
+    if todo:
+        print(f"\n待核对（{len(todo)} 项，交给用户确认前列在回复末尾）：")
+        for n, t in todo:
+            print(f"  ❓ 第 {n} 页：{t}")
 
 
 # ---------------------------------------------------------------- 模板外观底图
@@ -429,12 +546,15 @@ def site_slides(data, design):
                 "title": page["title"], "point": page.get("point", ""), "notes": "\n".join(ps),
                 "bridge": first_sentence(ps[0]) if ps else "",
                 "research": page.get("research", []), "sources": page.get("sources", []),
+                "figures": page.get("figures", []), "todo": page.get("todo", []),
                 "bar": page.get("bottombar"), "refs": page.get("refs", []), "cols": page.get("cols", 12),
-                # 网格下边离正文区底边的距离，和 Grid(bottombar=, refs=) 同一个算法
-                "bottom": max(2.2 if page.get("bottombar") else 1.6, refs_bottom(page["refs"]) if page.get("refs") else 0),
+                "bottom": grid_bottom(bool(page.get("bottombar"))),  # 网格下边离正文区底边的距离，和 Grid 同一个算法
                 "variants": [{"label": lab, "html": inline_images(src, data["dir"], f"draft/{page['id']}.html")}
                              for lab, src in variants(data, page)],
                 "design": shot(n), "hints": hs[n]})
+    refs = [r for r, _ in collect_refs(data)]
+    if refs:  # 末尾的参考文献附录；设计稿里按长度可能分成几页，网页只示意一页
+        slides.append({"n": n + 1, "type": "refs", "title": "参考文献", "items": refs, "design": shot(n + 1)})
     return slides
 
 

@@ -9,12 +9,15 @@
     ❌ 同一页形状 ID 重复、多个形状共用同一个标签部件（PowerPoint 会拒绝打开整个文件）
     ❌ 形状超出页面
     ❌ 模板占位词残留（汇报标题、章节名、页面结论句……）
-    ❌ 字号小于 10.5pt（页脚参考文献 refs() 放行到 8pt）
+    ❌ 字号小于 10.5pt
     ⚠️ 文字估算宽度或行数超出文本框（按 tw 估算，中文按 1em；表格单元格不估算，以渲染图为准）
-    ⚠️ 正文里有小于 12pt 的文字（S_NOTE，图注和参数注解的下限）、正文字数超过 280（页脚参考文献不计）
+    ⚠️ 正文里有小于 12pt 的文字（S_NOTE，图注和参数注解的下限）、正文字数超过 280
+    ⚠️ 页面文字（不含口播稿）里有口语说法（hust_deck.COLLOQUIAL）：页面文字用书面语
+    末尾的参考文献附录页（deck.references()）不查图、字数和口播稿
     ⚠️ 内容页没有图片也没有图表，或图和图表只占正文区不到两成
     ⚠️ --figures 目录里取来了却没放进 PPT 的图
     ⚠️ 卡片内容不充实：有大块竖向空白、只有文字的卡片里文字太少、没有图表的卡片每 cm² 字数太少
+    ⚠️ 分组框（多面板、因果链）里图的上方空着一大截：面板宽度没按图的宽高比分
     ⚠️ 两个带文字的形状互相重叠；正文文字压在图片上（按估算的文字行高，不按文本框外框）
     ⚠️ 正文没有铺满正文区：内容上沿离正文区顶端超过 3cm，或下沿离底端超过 3.5cm（只看外框，卡片内部的空白以渲染图为准）
     ⚠️ 内容页没有口播稿备注
@@ -51,7 +54,7 @@ CM = 360000
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from hust_deck import GRAY, INK, LINE, S_MARK, S_NOTE, TEXT, TONES, TYPE_NAMES, WHITE, templates, tw, use_template  # noqa: E402
+from hust_deck import COLLOQUIAL, GRAY, INK, LINE, S_MARK, S_NOTE, TEXT, TONES, TYPE_NAMES, WHITE, templates, tw, use_template  # noqa: E402
 
 TITLE_EM = 16  # 页面标题写主题词，16 个汉字以内（content_rules.md 第 3 节）
 
@@ -64,6 +67,8 @@ GAP_TOP, GAP_BOTTOM = 3.0, 3.5
 # 卡片里的竖向空白不小于 CARD_GAP[0] cm 且占正文区 CARD_GAP[1] 以上时提示；
 # 只有文字的卡片，文字面积占比低于 CARD_MIN_FILL 时提示（数值按 10.12 汇报里看着空的几页校准）
 CARD_GAP, CARD_MIN_FILL = (1.2, 0.35), 0.2
+# 分组框里图上方的空白不小于 PANEL_GAP[0] cm 且占框高 PANEL_GAP[1] 以上时提示（因果链试做页左块空了约 2.5cm，用户嫌难看）
+PANEL_GAP = (1.0, 0.15)
 # 没有图表的卡片，正文区每 cm² 少于这么多字时提示内容偏少（看着空的卡片在 0.56 以下，充实的在 0.67 以上）
 CARD_MIN_DENSITY = 0.6
 # 卡片里除文字外只允许有这些「文字的底子」，其余形状（图片、表格、图表、连线、节点、示意图形）都按图形算
@@ -77,7 +82,6 @@ BLOCKS = ("卡片", "底色", "图片", "网图", "表格", "图表", "截图", 
 # 图片和图表占正文区的比例低于这个值时提示：同学那份被用户认可的会议 PPT 每页在 25–44%，
 # 被评为「太烂」的答辩稿多数页是 0（只有文字和自己画的方框）
 FIG_MIN_SHARE = 0.2
-REF_MIN_PT = 8  # 页脚参考文献（形状名「参考文献」）允许的最小字号
 IMG_EXT = (".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tif", ".tiff")
 NEAR_MISS = (0.05, 0.25)  # cm；0.05 以下看不出来（gallery() 按宽高比算尺寸，同组图会有 0.02–0.03 的取整差）
 # 构图签名只看面积不小于这个值（cm²）的块；同一签名出现这么多页时提示
@@ -259,6 +263,30 @@ def geom(sh):
     return sh.name, sh.left, sh.top, sh.width, sh.height
 
 
+def panel_gap(frame, pictures, texted):
+    """分组框（panel()）里内容上方的竖向空白（cm）：框内图片和文字（不含压在边框上的标签）的上沿离内容区顶端的距离。
+    figblock() 不写 head 时把图贴着底部的文字排，图组太矮时空白全在上面。超过 PANEL_GAP 时返回空白高度，否则返回 0。"""
+    fl, ft, fr, fb = bbox(frame)
+    pics = [bbox(p) for p in pictures if contains((fl, ft, fr, fb), bbox(p))]
+    if not pics:
+        return 0
+    words = [bbox(t) for t in texted if not t.name.startswith("标签") and contains((fl, ft, fr, fb), bbox(t))]
+    gap = (min(b[1] for b in pics + words) - ft) / CM - 0.65  # 0.65：上边框到内容区的距离（标签压在边框上）
+    h = (fb - ft) / CM
+    return gap if gap >= PANEL_GAP[0] and gap >= PANEL_GAP[1] * h else 0
+
+
+def panel_label(frame, shapes):
+    """压在分组框上边框（或左侧竖排）的标签文字。"""
+    fl, ft, fr, fb = bbox(frame)
+    for sh in shapes:
+        if sh.name.startswith("标签") and sh.has_text_frame:
+            l, t, r, b = bbox(sh)
+            if fl <= l and r <= fr and t <= ft + CM * 0.6 and b >= ft - CM * 0.6:
+                return sh.text_frame.text.strip()
+    return frame.name
+
+
 def overlap(a, b):
     x = min(a[2], b[2]) - max(a[0], b[0])
     y = min(a[3], b[3]) - max(a[1], b[1])
@@ -374,9 +402,9 @@ def main():
             for w in stale_words:
                 if w in txt:
                     report("❌", i, f"「{sh.name}」残留模板占位词「{w}」")
-            is_ref = sh.name.startswith("参考文献")  # refs() 画的页脚文献：字号放行到 REF_MIN_PT，不计字数、不核对数字
+            is_ref = sh.name.startswith("参考文献")  # deck.references() 画的附录条目：不计字数、不核对数字、不查口语
             for size, run in sizes_of(sh):
-                if size < (REF_MIN_PT if is_ref else 10.5):
+                if size < 10.5:
                     report("❌", i, f"「{sh.name}」字号 {size:g}pt 太小：{run[:20]}")
             msg = overflow(sh) if sh.has_text_frame else None
             if msg:
@@ -385,7 +413,7 @@ def main():
                 if not is_ref:
                     body_chars += len(re.sub(r"\s", "", txt))
                     body_sizes += [s for s, _ in sizes_of(sh)]
-                texts.append(txt)
+                    texts.append(txt)
                 if sh.has_text_frame:
                     texted.append(sh)
             if nums is not None and i > 1 and not is_ref and not sh.name.startswith("灯片编号"):
@@ -406,6 +434,8 @@ def main():
                     report("⚠️", i, f"「{a.name}」的文字压在「{pic.name}」上：{text_of(a).strip()[:20]}")
         if is_content:
             title = _title(shapes)
+            if title.startswith("参考文献"):  # deck.references() 的附录页：只有条目文字，前面的通用检查已经查过溢出和字号
+                continue
             if tw(title, 1) / tw("字", 1) > TITLE_EM:
                 report("⚠️", i, f"标题「{title}」超过 {TITLE_EM} 字：写主题词，结论写进要点句")
             for sh in shapes:  # 模板里这两个框会自动换行，估算宽度超出就是折成了两行
@@ -444,6 +474,9 @@ def main():
             slop = sorted({m.group(0) for t in [title, notes, *texts] for m in SLOP_RE.finditer(t)})
             if slop:
                 report("⚠️", i, f"有 AI 套话：{'、'.join(slop)}，删掉或换成具体说法")
+            spoken = sorted({w for t in [title, *texts] for w in COLLOQUIAL if w in t})  # 口播稿是口语，不查
+            if spoken:
+                report("⚠️", i, f"页面文字有口语说法「{'、'.join(spoken)}」，改成书面语（content_rules.md 第 3 节）")
             misses = near_misses(blocks)
             if misses:
                 report("⚠️", i, f"近似错位（要么对齐要么拉开）：{'；'.join(misses[:3])}")
@@ -465,6 +498,11 @@ def main():
                 elif (d := card_density(card, shapes)) and d[0] < CARD_MIN_DENSITY and d[1] >= 15:
                     report("⚠️", i, f"卡片「{head}」内容偏少（约 {d[0]:.2f} 字/cm²，充实的卡片在 {CARD_MIN_DENSITY} 以上），"
                                     "补机制、对比、数据或例子；页页都薄时先查提纲是否切得太碎")
+            for frame in (sh for sh in shapes if sh.name.startswith("分组框")):
+                gap = panel_gap(frame, pictures, texted)
+                if gap:
+                    report("⚠️", i, f"面板「{panel_label(frame, shapes)}」里图的上方空着约 {gap:.1f}cm（用户嫌「留那么大的空白」）："
+                                    "用 share_cols() 按图的宽高比分面板宽度，或用 figblock(head=...) 在顶部补说明、多放图")
             charts = [sh for sh in shapes if getattr(sh, "has_chart", False) and sh.has_chart]
             share = sum(sh.width * sh.height for sh in pictures + charts) / (tmpl.w * tmpl.h * CM ** 2)
             if share == 0:

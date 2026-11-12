@@ -39,11 +39,19 @@
 ```json
 {
   "meta": {"title": "...", "presenter": "...", "date": "...", "template": "hust",
-           "occasion": "...", "audience": "...", "minutes": 10, "thesis": "..."},
+           "occasion": "...", "audience": "...", "minutes": 10, "thesis": "...",
+           "materials": [{"file": "Dias2023.pdf", "role": "核心", "read": "第 3–9 页、图 2–6", "use": "机理和主导反应"},
+                         {"file": "report.md", "role": "补充", "read": "第 2 章", "use": "背景和应用"},
+                         {"file": "Alves2019.pdf", "role": "仅背景", "read": "", "use": "不引用、不取图"}],
+           "strict": false},
   "parts": [
     {"title": "章节名", "pages": [
       {"id": "magnetron", "title": "磁控管的结构与原理", "point": "电子绕着谐振腔转，像吹哨一样激发微波",
-       "research": ["要点（出处）"], "sources": ["source/xxx.txt"], "cols": 12, "bottombar": ["类比", "一句话"]}]},
+       "research": ["电能变成微波的比例约 50%（microwave_oven.txt「Efficiency」段）"], "sources": ["source/xxx.txt"],
+       "figures": ["拆开的家用磁控管，图上自带 1–6 编号（figures/magnetron.jpg）",
+                   "O₂(a) 损失通道占比（Dias2023.pdf 第 7 页图 4b，保留横轴气压和图例 → figures/dias_fig4b.png）"],
+       "todo": ["Kanarik 的「成本降一半」是哪一组对比，原文第 709 页待核对"],
+       "cols": 12, "bottombar": ["类比", "一句话"]}]},
     {"title": "总结", "toc": false, "pages": [...]}
   ]
 }
@@ -54,17 +62,21 @@
 | meta | `title` `presenter` `date` | 是 | 封面标题、汇报人（最多约 8 个汉字）、日期（「2026年10月14日」） |
 | meta | `template` | | 模板名，默认 `hust` |
 | meta | `occasion` `audience` `minutes` `thesis` | | 场合、听众、时长（分钟）、要听众接受的那一个结论：需求调研的结果 |
+| meta | `materials` | | 材料清单：每份材料的 `file`、`role`（核心 / 补充 / 仅背景）、`read`（读哪些页、节、图）、`use`（用来支撑什么）。需求调研时和用户一起定；「仅背景」的材料不引用、不取图，`check` 发现用到会提示 |
+| meta | `strict` | | 严格材料边界，默认 `false`。论文精读、文献汇报设为 `true`：只读清单里写明的页和节，资料和图都只从清单里的论文来，不上网补、不画描述性插图；`check` 会提示来自网页、Commons 的条目 |
 | 章节 | `title` | 是 | 章节名，写进目录、过渡页和章节标签，和讲稿的 `## ` 一致 |
 | 章节 | `toc` | | 默认 `true`；`false` 时不进目录、不加过渡页，用于开头的引入页和最后的总结页 |
 | 章节 | `pages` | | 这一章的页；讲稿确认、切页之前先不写，`check` 和网页的讲稿视图照样能用 |
 | 页 | `id` | 是 | 小写字母、数字、`-`、`_`，全份不重复；讲稿里的 `[id]` 和初稿文件名 `draft/<id>.html` 都用它 |
 | 页 | `title` | 是 | 主题词标题，16 字以内（`content_rules.md` 第 3 节） |
 | 页 | `point` | | 要点句，20 字以内，画在标题下的浅底条里；写初稿前要写上 |
-| 页 | `research` | | 资料要点，一条一句，括号里写出处；显示在预览的「搜索」里 |
+| 页 | `research` | | 资料要点，一条一句，末尾括号写出处：文件名加页码或节号（「Dias2023.pdf 第 7 页」「report.md 2.3 节」），有适用条件一起写（「30 mA、10 Torr 下」）。`check` 提示没写出处的条目；显示在预览的「搜索」里 |
 | 页 | `sources` | | 出处：`source/` 下的文件或网址 |
+| 页 | `figures` | | 图单：这一页要放的图，一条一张，写「放什么（从哪来）」；论文图写到论文、PDF 页码、图号和要保留的坐标轴、图例，取到后写上文件名（「O₂(a) 损失通道占比（Dias2023.pdf 第 7 页图 4b，保留横轴气压和图例 → figures/dias_fig4b.png）」）。切页时就列，章名带「背景」的章每页至少 3 张、其余页至少 1 张（总结、展望、计划类章节不查；`figures.md` 第 1 节）；原生图表、示意图也写进图单，注明「脚本画」；`check` 报出图单太少和写了文件名但还没取到的图，网页「搜索」里能看到 |
+| 页 | `todo` | | 待核对：材料缺页、数据找不到原文依据、出处对不上时，写明缺什么，不猜、不自行扩大阅读范围。`check` 单独列出，网页便签和「搜索」里显示；每个检查点交给用户时列在回复末尾，用户答复后删掉对应条目 |
 | 页 | `cols` | | 这一页网格的列数，默认 12；五步并列用 5，三步用 3 |
 | 页 | `bottombar` | | 页底总结条 `["标签", "一句话"]`；有它时网格下边上移，和 `Grid(bottombar=True)` 一致 |
-| 页 | `refs` | | 页脚参考文献（答辩、开题讲到别人工作的页）：GB/T 7714 完整条目的列表，带「[n]」；网页和设计稿都画在页底，不能和 `bottombar` 同页 |
+| 页 | `refs` | | 这一页引用的文献（答辩、开题讲到别人工作的页）：GB/T 7714 完整条目的列表，带「[n]」，期刊、会议、学位论文有 DOI 的写在末尾。页面上只标「[n]」，全文由 `deck.references(refs_in_order(...))` 汇总到末尾参考文献页；同一篇各页写成完全一样的条目。`check` 查编号是否从 [1] 连续、缺 DOI；网页「搜索」显示本页引用，翻页预览最后有参考文献页 |
 
 页码按 封面 1、目录 2，每个进目录的章节前一张过渡页 数下去，和设计稿 pptx、讲稿视图、便签上的「#n」一致，
 用户说「第 7 页」时几处对得上。
@@ -89,7 +101,7 @@
       <div class="imgs"><div><img src="../figures/kanarik_fig1_sim.png"><img src="../figures/kanarik_fig2.png"></div>
                         <div><img src="../figures/kanarik_fig3.png"></div></div>
       <div class="cap">刻蚀模拟器 · 工程师进度 · 人机配合的成本</div>
-      <div class="ends"><p><b>调的参数：</b>11 个工艺参数</p><p class="concl">人机配合，达标成本约降一半</p></div>
+      <div class="ends"><p><b>调节变量：</b>11 个工艺参数</p><p class="concl">人机协同，达标成本降低约 50%</p></div>
     </div></div></div>
     <div class="card">…第二张卡片同样写…</div>
   </div></div>
@@ -128,7 +140,7 @@
 | `table.ftbl`（`th` 表头和行名，`td` 里放 `img` 或数值） | 图片表格 | `figtable(box, 表头, 行)` |
 | `.concl` | 面板里一句强调色粗体结论 | `R(..., color=TONES["accent"].ink, bold=True)` |
 | `.fine` | 12pt 注解：贴着图写的参数、数值、图注 | `size=S_NOTE` |
-| `.figblock` > `.imgs`（每个子 `div` 一行图）+ `.cap` + `.ends`（几个 `p`，`b` 是对比项名，`.concl` 是结果） | 一组文献图 + 图注 + 底部对齐的几行 | `figblock(box, rows, 图注, lines)` |
+| `.figblock` > `.fhead`（可选）+ `.imgs`（每个子 `div` 一行图）+ `.cap` + `.ends`（几个 `p`，`b` 是对比项名，`.concl` 是结果） | 顶部说明 + 一组文献图 + 图注 + 底部对齐的几行 | `figblock(box, rows, 图注, lines, head=...)` |
 | `.ph` + `data-kind` | 虚线占位框：还没取到的照片、截图、论文图，或原生图表、原生示意图、公式图 | `web_figure()` / `figure()` / `gallery()` / `chart()` / 原生形状 / `formula()` / `snippet()` |
 | `.em` | 强调色粗体的关键结论 | `R(..., color=TONES["accent"].ink, bold=True)` |
 

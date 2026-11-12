@@ -10,17 +10,17 @@
 import sys
 sys.path.insert(0, r"<skill>/scripts")
 from hust_deck import *
-from outline import page_notes
+from outline import page_notes, refs_in_order
 
 NOTES = page_notes("outline.json")       # {页 id: 讲稿里这一页的几段}，当口播稿，不在脚本里另写
 deck = Deck("hust")                      # 模板名，见 templates.md
 deck.cover(标题, 汇报人, 日期)          # 标题、汇报人过长时自动缩小字号
 deck.toc([章节...])
 deck.divider(章节)                       # 每章前一张，编号取目录顺序
-c = deck.content(章节, 主题词标题, notes=NOTES[页 id], point=要点句,
-                 refs=页["refs"])        # 要点句画在标题下的浅底条里；refs 是答辩、开题的页脚参考文献，可省
-g = Grid(lead=True, refs=页["refs"])     # 有要点句的页，网格从要点句条下面开始；有页脚文献时下边让出位置
-...                                      # 用 c 画正文
+c = deck.content(章节, 主题词标题, notes=NOTES[页 id], point=要点句)   # 要点句画在标题下的浅底条里
+g = Grid(lead=True)                      # 有要点句的页，网格从要点句条下面开始
+...                                      # 用 c 画正文；讲到别人工作的地方标「[n]」
+deck.references(refs_in_order("outline.json"))   # 答辩、开题：各页 refs 汇总成末尾参考文献页，按需分页
 deck.save(输出路径)
 ```
 
@@ -36,7 +36,7 @@ deck.save(输出路径)
 带总结条时加 `bottombar=True`；五列阶段卡用 `Grid(cols=5, lead=True)`。
 几张图拼在一块区域里时用 `gallery()` / `strip()` 按宽高比算尺寸（`aspect(图)` 取宽高比），区域本身仍落在网格上；
 只有 `layouts.md` 第 6 节那类几项并列的图片页，才从正文区 `B = Grid(lead=True).box(0, 0, 12, 6)` 起按图的形状排。
-常见构图和例子见 `layouts.md` 第 5、6 节。
+候选结构和例子见 `layouts.md` 第 5–7 节。
 
 ## 3. 方法
 
@@ -45,9 +45,10 @@ deck.save(输出路径)
 | `card(box, header=None, tone, solid=True, highlight=False, sub=None, shadow=False)` | 白底细边框卡片；header 给出时画标题条并返回其下的正文区 Box，sub 是标题条下一行灰字副标题。`shadow=True` 只给压在照片上的那一块 |
 | `tint(box, tone)` | 浅色底块 |
 | `panel(box, 标签, tone="primary", side=False)` | 分组框：虚线圆角边框 + 压在上边框正中的实色标签（`side=True` 为左侧竖排标签），返回放内容的 Box。多面板页用，见 `layouts.md` 第 7 节 |
-| `figblock(box, rows, 图注, lines)` | 一组图（rows 同 `gallery()`）→ 一行 12pt 图注 → 底部几行 16pt 居中字（如「调的参数」+ 强调色结果）。底部从 box 底边往上排，几块行数相同就自动对齐。多面板页的面板和卡片里用 |
+| `figblock(box, rows, 图注, lines, head=None)` | 顶部 13pt 说明（`head`，可选）→ 一组图（rows 同 `gallery()`）→ 一行 12pt 图注 → 底部几行 16pt 居中字（如「调节变量」+ 强调色结果）。底部从 box 底边往上排，几块行数相同就自动对齐；图组填不满这一块时用 `head` 补说明，图在中间居中。多面板页、因果链页的面板和卡片里用 |
 | `figtable(box, 表头, [(行名, [格子, ...]), ...])` | 图片表格：格子是图片路径、文字或 None；含图的行平分高度，纯文字行（指标值）0.8cm。返回 {(行, 列): 格子 Box} |
-| `refs(条目)` | 页脚参考文献，9pt 灰字贴页面底部；由 `deck.content(refs=)` 调用，网格用 `Grid(refs=)` 让位。和 `bottombar()` 不能同页 |
+| `deck.references(条目)` | 末尾的参考文献附录：12pt，一条一段，按估算行数自动分页（续页标题加「（续）」）。条目用 `refs_in_order("outline.json")` 收集：各页 `refs` 按第一次出现的顺序去重 |
+| `gap_arrow(a, b)` | 左右相邻两块之间的实色右箭头，横跨空隙、两头压进块里 0.2cm。因果链页型用 |
 | `heading(card, 标题, n=None)` / `title(anchor, x, y, s)` | 无标题条卡片的左上角标题（给 n 时带序号）/ 18pt 粗体标题 |
 | `text(box, paras, size, color, align, anchor, line)` | 文本框；paras 可为 str、`P(...)`、`R(...)` 或列表 |
 | `at(anchor, x, y, paras, size, w=None)` | 按锚点放文字；不给 w 时单行不换行 |
@@ -64,9 +65,10 @@ deck.save(输出路径)
 | `on_image(pic, 图, px, py)` | 原图像素坐标换算成画布坐标（`pic` 是 `figure()` 的返回值），引线标注的终点用 |
 | `gallery(box, [[图, 图], [图]], gap, valign)` | 一块区域里拼多张图：同行等高、占满整行宽度，整组缩放到放得下。一张卡片放 2 张以上图时用它，不要逐张放进固定格子 |
 | `strip(box, [([图, 图], 图注), ...], gap, ggap, align, valign)` | 几组图排成等高的一行，每组下面一行图注；`align="e"` 贴右边（如贴住箭头）。返回图片占用的 Box |
-| `aspect(图)` | 图片宽高比，按图的形状算版面时用 |
+| `aspect(图)` / `group_aspect(rows)` | 图片宽高比 / 一组图（rows 同 `gallery()`）拼起来的整体宽高比，按图的形状算版面时用 |
+| `share_cols([rows, ...], total=12, min_cols=3)` | 几块并排的面板各占几列：按各组图的整体宽高比分，宽而矮的图组给宽块，各块的图一样高、上方不留空。多面板页、因果链页用 |
 | `formula(png, x, y)` / `snippet(png, anchor, x, y)` | 按 600dpi 原尺寸放公式图 / 按原尺寸放代码或终端图（返回的 Box 带 `line_y(k)`） |
-| `bottombar(标签, 一句话)` | 页底总结条：一句设计原则或补充说明，不复述标题 |
+| `bottombar(标签, 一句话)` | 页底总结条：背景章写「由此可见」接下一页，其他页写一句设计原则或补充说明，不复述标题和要点句 |
 | `kpis(box, [(数值, 说明)], big=False)` / `chips(x, y, [词])` / `timeline(box, [(名称, 说明)])` | 关键数字行（竖线分隔）/ 一排关键词胶囊 / 迷你时间线；和网页初稿的 `.kpis` `.chips` `.tl` 对应 |
 
 短公式用 `P(...)` + `var()` 写成可编辑文字；代码截图、复杂公式、网上的图、论文里的图怎么取，见 `figures.md`。
