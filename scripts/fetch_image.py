@@ -141,6 +141,11 @@ def get(file, out, name, width):
     pages = commons_query({"titles": title, "iiurlwidth": width})
     if not pages or "imageinfo" not in pages[0]:
         raise ValueError(f"Commons 上没有 {title}")
+    ii = pages[0]["imageinfo"][0]
+    if "/thumb/" not in ii.get("thumburl", "") and ii.get("width", 0) > 1:
+        # 原图比要的宽度还窄时，API 给的是 upload.wikimedia.org 上的原图地址，这个主机限流（429）很严，重试几分钟也下不来；
+        # 改要一张比原图窄 1 像素的缩略图，地址在 thumb.wikimedia.org，限流宽松
+        pages = commons_query({"titles": title, "iiurlwidth": ii["width"] - 1})
     r = meta_of(pages[0])
     if not r["license"]:
         raise ValueError(f"{title} 没有许可信息，不能使用")

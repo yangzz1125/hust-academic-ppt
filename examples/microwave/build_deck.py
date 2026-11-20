@@ -150,7 +150,7 @@ accent = TONES["accent"].ink
 c.tint(cols[2], "accent")
 for i, (col, (name, img, cap, desc)) in enumerate(zip(cols, steps)):
     key = i == 2
-    c.at("n", col.cx, col.t - 0.1, f"0{i + 1}", size=S_DISPLAY, color=accent if key else TONES["primary"].ink, bold=True)
+    c.num(col.cx, col.t - 0.55, str(i + 1), tone="accent" if key else "primary")
     c.web_figure(FIG / f"{img}.jpg", Box(col.l + 0.3, col.t - 1.8, col.w - 0.6, 2.3), cap, fill=True)
     c.at("n", col.cx, col.t - 4.3, name, size=S_TITLE, color=INK, bold=True)
     c.text(Box(col.l + 0.2, col.t - 5.2, col.w - 0.4, 1.45), desc, align="c", line=21, color=accent if key else TEXT)
@@ -162,7 +162,7 @@ c.text(Box(loss.l + 0.7, loss.t - 0.2, 20.0, loss.h - 0.4), [
     P(R("能量主要损失在磁控管这一步", bold=True, size=S_TITLE, color=INK)),
     P("插座的交流电升压、倍压成直流高压后，由磁控管变成微波；普通型号只有一半左右的电能变成微波", before=4),
 ], line=24, anchor="m")
-c.keynum(26.0, loss.cy - 0.45, "50–64%", "电能变成微波的比例（普通到节能型号）", big=True)
+c.keynum(26.0, loss.cy - 0.1, "50–64%", "电能变成微波的比例（普通到节能型号）")
 
 # 波长对比：三个候选频段并排，横条按波长比例画出长短，2.45 GHz 一列用强调色；
 # 底部一句说明为什么只能在 ISM 频段里选，回答开场的第一个现象
@@ -175,7 +175,7 @@ for i, (f, lam, lam_s, use, key) in enumerate(bands):
     tone = "accent" if key else "primary"
     c.tint(blk, tone)
     ink = TONES[tone].ink
-    c.at("n", blk.cx, blk.t - 0.4, f, size=S_DISPLAY, color=ink, bold=True)
+    c.at("n", blk.cx, blk.t - 0.6, f, size=S_TITLE, color=ink, bold=True)
     full = blk.w - 1.2  # 32.8 cm 对应的横条长度
     c.shape("波长", MSO_SHAPE.RECTANGLE, Box(blk.l + 0.6, blk.t - 2.6, full * lam / 32.8, 0.35), TONES[tone].base)
     c.at("nw", blk.l + 0.6, blk.t - 3.15, lam_s, size=S_SMALL, color=GRAY)

@@ -129,8 +129,8 @@
 | `.tint`（`.tight` 内边距小一些）/ `.tint.accent` / `.tint.neutral` / `.solid` | 主色浅底块 / 强调色浅底 / 灰底 / 主色实色块 | `tint(box)` / `tint(box, "accent")` / `tint(box, "neutral")` / `shape(..., TONES["primary"].base)` |
 | `h4` / `.num` | 块里的 18pt 粗体小标题 / 实心圆序号 | `title()`、`heading()` / `num()` |
 | `ul` / `ol.steps` | 项目符号列表 / 带圆形序号的步骤 | `bullets()` / `num()` + `text()` |
-| `.kpis` (`.kpis.bigv`) | 关键数字行，竖线分隔 | `kpis(box, [(数值, 说明)], big=...)` |
-| `.big` / `.mark` | 36pt 主角数字或大序号 / 28pt 年份 | `keynum(..., big=True)`、`at(..., size=S_DISPLAY)` / `S_MARK` |
+| `.kpis` | 关键数字行，竖线分隔，数值 18pt | `kpis(box, [(数值, 说明)])`（不用 `.bigv` / `big=True`） |
+| `.mark` | 28pt 年份 | `S_MARK`（`.big` 36pt 大字不再用于标签和数字） |
 | `.chips` | 一排关键词胶囊 | `chips(x, y, [...])` |
 | `.tl` | 时间线：横线、圆点、年份、名称和说明 | `timeline(box, [(名称, 说明)])`，或按 layouts.md 第 7 节画大时间线 |
 | `.vs` / `.cols` | 两三块并排对比 / 等分几栏 | 几个 `tint()` 并排 |
@@ -138,11 +138,11 @@
 | `figure.fig` + `img` + `figcaption` / 块里直接一个 `img` | 真图，等比缩进块里；图注 13pt 灰字 | `figure(path, box, caption=...)` / `web_figure()` / 几张图用 `gallery()`、`strip()` |
 | `.panel` + `.ptab`（`.panel.side` 竖排标签，内容包在 `.pbody` 里） | 虚线分组框 + 实色标签：多面板页 | `panel(box, 标签, side=...)` |
 | `table.ftbl`（`th` 表头和行名，`td` 里放 `img` 或数值） | 图片表格 | `figtable(box, 表头, 行)` |
-| `.concl` | 面板里一句强调色粗体结论 | `R(..., color=TONES["accent"].ink, bold=True)` |
+| `.concl` | 面板里一句强调色结论（不加粗） | `R(..., color=TONES["accent"].ink)` |
 | `.fine` | 12pt 注解：贴着图写的参数、数值、图注 | `size=S_NOTE` |
 | `.figblock` > `.fhead`（可选）+ `.imgs`（每个子 `div` 一行图）+ `.cap` + `.ends`（几个 `p`，`b` 是对比项名，`.concl` 是结果） | 顶部说明 + 一组文献图 + 图注 + 底部对齐的几行 | `figblock(box, rows, 图注, lines, head=...)` |
 | `.ph` + `data-kind` | 虚线占位框：还没取到的照片、截图、论文图，或原生图表、原生示意图、公式图 | `web_figure()` / `figure()` / `gallery()` / `chart()` / 原生形状 / `formula()` / `snippet()` |
-| `.em` | 强调色粗体的关键结论 | `R(..., color=TONES["accent"].ink, bold=True)` |
+| `.em` | 强调色的关键结论（不加粗） | `R(..., color=TONES["accent"].ink)` |
 
 封面和目录在网页里只画示意，设计稿用模板的封面页和目录页。
 

@@ -123,6 +123,8 @@ $F add <图片直链> <汇报目录>/figures --name xxx --title 题名 --source 
   `reference` 是 GB/T 7714-2015 的 [EB/OL] 条目，
   需要参考文献页时直接用它。用 `c.web_figure(path, box, 图注)` 放入，缺 `.json` 会报错。
 - 一次连续取十几张图后 Commons 会返回 HTTP 429，脚本会按 Retry-After 等待后重试；批量取图时每张之间停几秒。
+  原图比要的宽度还小时，API 给的是 upload.wikimedia.org 上的原图地址，这个主机限流很严，重试几分钟也下不来；
+  `get` 这时改要一张比原图窄 1 像素的缩略图，地址在 thumb.wikimedia.org，限流宽松。
 - 取图后用 Read 看一遍：内容对不对、有没有裁掉的标注、图上的字放进页面后是否太小、有没有水印。有缺陷就换图，
   或者改用原生示意图、`chart()` 重画（`examples/microwave/` 的水分子示意和驻波曲线就是这样来的）。
 - **图上自带的编号写进图注**：`get` 会打印 Commons 的描述，里面常有「1) cathode 2) anode」这样的编号含义，
@@ -142,6 +144,8 @@ $P preview 论文.pdf 5 <scratchpad>/p5.png           # 带 10% 网格的整页�
 $P crop 论文.pdf 5 <汇报目录>/figures/fig3b.png --box 0.12,0.54,0.82,0.89
 ```
 
+- 下载论文 PDF：arXiv 用 `https://arxiv.org/pdf/<编号>`；Windows 的 curl 报 schannel「吊销检查」失败（0x80092013）时加
+  `--ssl-no-revoke`。
 - 裁切命令记在生成脚本里，换范围时改命令重跑。不裁论文原图注，图注在 PPT 里用 `figure(..., caption=)` 重新写
   （「论文图 3b：……」）。
 - **裁切质检**（Read 看裁出的图，每项都要满足，缺一项就是缺陷，不是可以接受的取舍）：

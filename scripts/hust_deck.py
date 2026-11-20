@@ -31,6 +31,7 @@
 """
 import copy
 import json
+import math
 import struct
 import zlib
 from pathlib import Path
@@ -50,7 +51,7 @@ from pptx.util import Emu, Pt
 
 __all__ = ["Deck", "Canvas", "Box", "Grid", "P", "R", "var", "place", "tw", "pt2cm", "fill_text",
            "INK", "TEXT", "GRAY", "LINE", "WHITE", "TONES", "TYPE_NAMES", "S_TITLE", "S_BODY", "S_SMALL", "S_MARK", "S_DISPLAY",
-           "S_NOTE", "MSO_SHAPE", "templates", "aspect", "group_aspect", "share_cols", "on_image", "grid_bottom",
+           "S_NOTE", "MSO_SHAPE", "templates", "aspect", "group_aspect", "share_cols", "on_image", "grid_bottom", "block_h",
            "COLLOQUIAL"]
 
 TEMPLATES = Path(__file__).resolve().parent.parent / "templates"
@@ -90,8 +91,8 @@ TYPE_NAMES = {"concept": "概念", "law": "定律", "quantity": "物理量", "fo
 S_TITLE, S_BODY, S_SMALL = 18, 16, 13
 # 图注和参数注解的下限（用户明确要求过放宽到 12）：多面板页、图片表格里贴着图写的参数、图注、数值用
 S_NOTE = 12
-# 展示字号：不算正文字号档。S_MARK 给时间线年份这类大字标记；S_DISPLAY 给大序号、拆解的公式、
-# keynum(big=True) 的主角数字。一页最多用一种，整份只在几种命名页型里用（见 references/layouts.md 第 7 节）
+# 展示字号：不算正文字号档。S_MARK 给时间线年份这类大字标记；S_DISPLAY 只给公式拆解的公式。
+# 用户明确不要 36pt 粗体的标签、序号和数字（「雷霆加粗，一看就是 AI」），关键数字一律 18pt（references/style.md 第 3 节）
 S_MARK, S_DISPLAY = 28, 36
 # 页面文字（标题、要点句、正文、图注）里不该出现的口语说法，qa_check 和 outline.py check 都用它提示。
 # 讲稿和口播稿是口语，不查（content_rules.md 第 5 节「页面文字用书面语」）
@@ -479,10 +480,23 @@ class Canvas:
             self.num(card.l + 0.9, y, n, tone)
             self.title("w", card.l + 1.6, y, label)
 
+    def fit_block(self, l, t, w, title, lines, tone="primary", h=None):
+        """按内容定高的浅底文字块：18pt 粗体小标题 + 各段文字，左上角在 (l, t)，返回 Box。
+        lines 每项是 str（16pt 正文）或 (文字, 字号[, 颜色])；高度默认 block_h(w, lines)，几块要等高时传 h。
+        用户不要「大框里两三行字、下面一大块空白」（layouts.md 第 1 节）：文字块按内容定高，剩下的高度给图。"""
+        box = Box(l, t, w, h or block_h(w, lines))
+        self.tint(box, tone)
+        paras = [P(R(title, bold=True, color=TONES[tone].ink, size=S_TITLE))]
+        for x in lines:
+            s, size, color = (x, S_BODY, None) if isinstance(x, str) else (tuple(x) + (None,))[:3]
+            paras.append(P(R(s, size=size, **({"color": color} if color else {})), before=4))
+        self.text(Box(box.l + 0.5, box.t - 0.3, box.w - 1.0, box.h - 0.5), paras, line=BLOCK_LINE[S_BODY])
+        return box
+
     def keynum(self, x, y, value, label, tone="accent", big=False):
         """关键数字：18pt 粗体的数值（默认强调色），正下方 13pt 灰色说明，整组以 (x, y) 为中心。
         用于一页里要听众记住的两三个数字，如结论页的「数字带」、效率对比。
-        big=True 时数值用 36pt，给「一个数字撑起一页」的轻页当主角，一页最多一两个。"""
+        big=True 时数值用 36pt。用户明确不要这种大号粗体（「雷霆加粗，一看就是 AI」），默认不用。"""
         self.at("s", x, y + 0.4, value, size=S_DISPLAY if big else S_TITLE, color=TONES[tone].ink, bold=True,
                 kind="关键数字")
         self.at("n", x, y + 0.3, label, size=S_SMALL, color=GRAY, kind="关键数字")
@@ -977,6 +991,19 @@ def share_cols(groups, total=12, min_cols=4):
         k = max(range(len(cols)), key=lambda i: total * w[i] / sum(w) - cols[i])
         cols[k] += 1
     return cols
+
+
+BLOCK_LINE = {S_BODY: 22, S_SMALL: 17, S_NOTE: 16}  # fit_block 各字号的行距（pt）
+
+
+def block_h(w, lines, title=True):
+    """fit_block() 按内容需要的高度（cm）：上下内边距 + 18pt 小标题 + 各段按 tw() 估算的行数 × 行距。
+    lines 同 fit_block()。一栏里文字块和图上下排时，先用它算文字要多高，剩下的高度给图。"""
+    h = 0.6 + (pt2cm(S_TITLE * 1.3) + 0.1 if title else 0)
+    for x in lines:
+        s, size = (x, S_BODY) if isinstance(x, str) else tuple(x)[:2]
+        h += math.ceil(tw(s, size) / ((w - 1.0) * 0.95)) * pt2cm(BLOCK_LINE[size]) + 0.15
+    return h
 
 
 def on_image(pic, path, px, py):

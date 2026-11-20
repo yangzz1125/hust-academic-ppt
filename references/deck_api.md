@@ -59,6 +59,7 @@ deck.save(输出路径)
 | `legend(x, y, ["law", "formula"])` | 类型图例 + 有方向 / 无方向线型 |
 | `table(l, t, widths, rows, row_h, header, first_col_bold)` | 无网格原生表格，表头下一条横线、行间细线；单元格可传列表，按意群分行 |
 | `output(card, 产出, tone="accent")` | 卡片底部的「产出」框 |
+| `block_h(w, lines)` / `fit_block(l, t, w, 标题, lines, tone, h=None)` | 按内容定高的浅底文字块：`block_h` 估算 18pt 小标题 + 各段（str 为 16pt，`(文字, 字号[, 颜色])` 指定字号）需要的高度；`fit_block` 以 (l, t) 为左上角画出并返回 Box。一栏里文字块和图上下排时先用它算文字要多高，剩下的给图 |
 | `keynum(x, y, 数值, 说明, tone="accent", big=False)` | 关键数字：18pt 粗体数值 + 下方 13pt 说明，以 (x, y) 为中心；`big=True` 时数值 36pt，当整页主角 |
 | `chart(kind, box, 类别, {系列: 数值}, tones, unit, number_format, labels, highlight, vmax)` | 原生图表：`bar` / `barh` / `line`，数据可在 PowerPoint 里改；最多 3 个系列，默认本工作主色、基线灰色；`highlight=类别名` 把一根柱标成橙色；柱图的轴从 0 开始 |
 | `figure(path, box, align="c", caption=None, fill=False)` / `web_figure(path, box, 图注, align, fill)` | 等比放图，`align`（c / w / e / n / s）定图在 box 里的位置，图注要写成 `caption=`（第三个位置参数是 align）；`fill=True` 裁掉多余部分铺满 box，一排实物照片要同样大小时用 / 放网上取来的图，图注必填 |
